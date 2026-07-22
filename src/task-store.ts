@@ -71,6 +71,25 @@ function isProcessRunning(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
+/**
+ * Fill defaults for tasks persisted by older versions. Task files written
+ * before the blocking feature have no `blockedBy`/`blocks`/`metadata`, so
+ * consumers that read those fields unguarded (e.g. `task.blockedBy.length`)
+ * would throw. Normalizing at the load boundary lets every consumer trust the
+ * shape. Also guards against wrong types in hand-edited files.
+ */
+function normalizeTask(t: Task): Task {
+  const now = Date.now();
+  return {
+    ...t,
+    metadata: t.metadata && typeof t.metadata === "object" && !Array.isArray(t.metadata) ? t.metadata : {},
+    blocks: Array.isArray(t.blocks) ? t.blocks : [],
+    blockedBy: Array.isArray(t.blockedBy) ? t.blockedBy : [],
+    createdAt: typeof t.createdAt === "number" ? t.createdAt : now,
+    updatedAt: typeof t.updatedAt === "number" ? t.updatedAt : now,
+  };
+}
+
 export class TaskStore {
   private filePath: string | undefined;
   private lockPath: string | undefined;
@@ -98,7 +117,7 @@ export class TaskStore {
       this.nextId = data.nextId;
       this.tasks.clear();
       for (const t of data.tasks) {
-        this.tasks.set(t.id, t);
+        this.tasks.set(t.id, normalizeTask(t));
       }
     } catch { /* corrupt file — start fresh */ }
   }

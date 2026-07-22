@@ -134,6 +134,20 @@ describe("TaskWidget", () => {
     expect(blockedLine).not.toContain("blocked by");
   });
 
+  it("does not crash the host when a task is missing legacy fields", () => {
+    // Simulate a record persisted before the blocking feature — no blockedBy.
+    // A throw here would escape to the TUI timer and kill the whole pi process,
+    // so the render must never throw (the guard returns a safe fallback).
+    store.create("Legacy pending", "Desc");
+    const raw = store.get("1") as any;
+    delete raw.blockedBy;
+    delete raw.blocks;
+    delete raw.metadata;
+    widget.update();
+
+    expect(() => renderWidget(ui.state)).not.toThrow();
+  });
+
   it("shows status summary in header", () => {
     store.create("Task A", "Desc");
     store.create("Task B", "Desc");

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -473,5 +473,31 @@ describe("TaskStore (absolute path)", () => {
     expect(existsSync(filePath)).toBe(true);
 
     rmSync(parentDir, { recursive: true, force: true });
+  });
+
+  it("normalizes legacy task records missing blockedBy/blocks/metadata on load", () => {
+    const dir = join(tmpdir(), `pi-tasks-legacy-${process.pid}-${Date.now()}`);
+    const filePath = join(dir, "tasks.json");
+    mkdirSync(dir, { recursive: true });
+    try {
+      // A task file written before the blocking feature — no blockedBy/blocks/metadata.
+      writeFileSync(filePath, JSON.stringify({
+        nextId: 2,
+        tasks: [{
+          id: "1",
+          subject: "Legacy task",
+          description: "From an older version",
+          status: "pending",
+        }],
+      }));
+
+      const task = new TaskStore(filePath).get("1")!;
+      expect(task.blockedBy).toEqual([]);
+      expect(task.blocks).toEqual([]);
+      expect(task.metadata).toEqual({});
+      expect(task.subject).toBe("Legacy task"); // existing fields preserved
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

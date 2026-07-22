@@ -134,8 +134,19 @@ export class TaskWidget {
     }
   }
 
-  /** Build widget lines from current live state. Called from the render callback. */
+  /** Render callback entry point. Guarded so a render error can never escape to
+   *  the TUI timer and crash the whole host process — worst case the widget is
+   *  empty for one frame. */
   private renderWidget(tui: any, theme: Theme): string[] {
+    try {
+      return this.buildWidgetLines(tui, theme);
+    } catch {
+      return [];
+    }
+  }
+
+  /** Build widget lines from current live state. */
+  private buildWidgetLines(tui: any, theme: Theme): string[] {
     const sortOrder = this.config.sortOrder ?? "id";
     const tasks = this.store.list(sortOrder);
     const w = tui.terminal.columns;
