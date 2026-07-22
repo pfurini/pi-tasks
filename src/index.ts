@@ -30,6 +30,7 @@ import {
 } from "./reminder-cadence.js";
 import { TaskStore } from "./task-store.js";
 import { loadTasksConfig } from "./tasks-config.js";
+import type { Task } from "./types.js";
 import { openSettingsMenu } from "./ui/settings-menu.js";
 import { TaskWidget, type UICtx } from "./ui/task-widget.js";
 
@@ -52,12 +53,76 @@ const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskList", "TaskGet", "TaskUpdat
 /** How many turns without task tool usage before injecting a reminder. */
 const REMINDER_INTERVAL = 4;
 
+/** Shorter interval used while any task is in_progress, so stale work is caught faster. */
+const ACTIVE_REMINDER_INTERVAL = 2;
+
+/** Cap on how many tasks the reminder echoes, to bound its size on large lists. */
+const REMINDER_MAX_TASKS = 10;
+
+/** Effective reminder interval for a given task list (pure — no disk I/O). */
+function intervalFor(tasks: Task[]): number {
+  return tasks.some(t => t.status === "in_progress") ? ACTIVE_REMINDER_INTERVAL : REMINDER_INTERVAL;
+}
+
 /** How many turns completed tasks linger before auto-clearing. */
 const AUTO_CLEAR_DELAY = 4;
 
-const SYSTEM_REMINDER = `<system-reminder>
-The task tools haven't been used recently. If you're working on tasks that would benefit from tracking progress, consider using TaskCreate to add new tasks and TaskUpdate to update task status (set to in_progress when starting, completed when done). Also consider cleaning up the task list if it has become stale. Only use these if relevant to the current work. This is just a gentle reminder - ignore if not applicable. Make sure that you NEVER mention this reminder to the user
-</system-reminder>`;
+/** Neutralize a task field for the echo: collapse newlines and strip reminder tags. */
+function sanitizeField(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").replace(/<\/?system-reminder>/gi, "").trim();
+}
+
+/**
+ * Build the system reminder, shaped after Claude Code's todo reminders: an
+ * empty-list nudge, or a state echo that dumps the current list as JSON. The
+ * wording mirrors Claude Code (adapted to this extension's task tool names).
+ */
+function buildSystemReminder(tasks: Task[]): string {
+  if (tasks.length === 0) {
+    return [
+      "<system-reminder>",
+      "This is a reminder that your task list is currently empty. DO NOT mention this to the user explicitly because they are already aware. If you are working on tasks that would benefit from a task list please use the TaskCreate tool to create one. If not, please feel free to ignore. Again do not mention this message to the user.",
+      "</system-reminder>",
+    ].join("\n");
+  }
+
+  // Bound the echo on large lists. When over the cap, drop completed tasks
+  // first (the reminder exists to surface unfinished work); ties keep task
+  // order since Array.sort is stable.
+  let shown = tasks;
+  if (tasks.length > REMINDER_MAX_TASKS) {
+    const rank = (t: Task) => (t.status === "in_progress" ? 0 : t.status === "pending" ? 1 : 2);
+    shown = [...tasks].sort((a, b) => rank(a) - rank(b)).slice(0, REMINDER_MAX_TASKS);
+  }
+  const hidden = tasks.length - shown.length;
+  const overflow = hidden > 0
+    ? ` (${hidden} more task${hidden === 1 ? "" : "s"} not shown — use TaskList for the full list.)`
+    : "";
+
+  const items = shown.map(t => {
+    const item: Record<string, string> = {
+      id: t.id,
+      content: sanitizeField(t.subject),
+      status: t.status,
+    };
+    if (t.activeForm) item.activeForm = sanitizeField(t.activeForm);
+    return item;
+  });
+
+  // When truncated, don't claim these are the full contents.
+  const prefix = "The task tools haven't been used recently. DO NOT mention this explicitly to the user.";
+  const header = hidden > 0
+    ? `${prefix} Here are your most relevant tasks (list truncated):`
+    : `${prefix} Here are the latest contents of your task list:`;
+
+  return [
+    "<system-reminder>",
+    header,
+    "",
+    `${JSON.stringify(items)}.${overflow} Continue on with the tasks at hand if applicable.`,
+    "</system-reminder>",
+  ].join("\n");
+}
 
 export default function (pi: ExtensionAPI) {
   // Initialize store and config
@@ -320,12 +385,25 @@ export default function (pi: ExtensionAPI) {
     if (autoClear.onTurnStart(cadence.currentTurn)) widget.update();
   });
 
-  // ── Token usage tracking ──
+  // ── Token usage tracking + stale-task detection ──
   // Feed per-turn token counts from assistant messages into the widget.
+  // Also detect when the agent has stopped referencing tasks but left
+  // them in_progress — schedule a reminder for the next LLM call.
   pi.on("turn_end", async (event) => {
     const msg = event.message as any;
     if (msg?.role === "assistant" && msg.usage) {
       widget.addTokenUsage(msg.usage.input ?? 0, msg.usage.output ?? 0);
+    }
+
+    // Stale-task detection: catch the case where the agent finishes work in a
+    // text-only turn (no tool calls, so tool_result never fires) but left tasks
+    // in_progress. Cheap-first: only read the store once the turn gap could
+    // matter — the in_progress interval is the smallest a reminder can need.
+    if (!cadence.reminderInjectedThisCycle && !cadence.reminderDue) {
+      const gap = cadence.currentTurn - cadence.lastTaskToolUseTurn;
+      if (gap >= ACTIVE_REMINDER_INTERVAL && store.list().some(t => t.status === "in_progress")) {
+        cadence.reminderDue = true;
+      }
     }
   });
 
@@ -340,20 +418,25 @@ export default function (pi: ExtensionAPI) {
   // before each LLM call and returns a modified copy of the messages
   // without persisting or polluting any tool output.
   pi.on("tool_result", async (event) => {
-    // Cheap-first: avoid store.list() disk I/O unless the cadence helper
-    // says the call could matter (i.e. it's a task tool that resets state,
-    // or it might queue the reminder).
-    const isTaskTool = TASK_TOOL_NAMES.has(event.toolName);
-    if (
-      !isTaskTool &&
-      cadence.currentTurn - cadence.lastTaskToolUseTurn < REMINDER_INTERVAL
-    ) {
+    // Task tool usage resets cadence (interval is irrelevant on this path — the
+    // helper resets and returns before reading it).
+    if (TASK_TOOL_NAMES.has(event.toolName)) {
+      evaluateToolResult(cadence, event.toolName, false, cadenceConfig);
       return {};
     }
-    if (!isTaskTool && cadence.reminderInjectedThisCycle) return {};
 
-    const hasTasks = isTaskTool ? false : store.list().length > 0;
-    evaluateToolResult(cadence, event.toolName, hasTasks, cadenceConfig);
+    if (cadence.reminderInjectedThisCycle) return {};
+    // Cheap-first: avoid store.list() disk I/O until the turn gap could matter.
+    // ACTIVE_REMINDER_INTERVAL is the smallest interval any reminder can need.
+    if (cadence.currentTurn - cadence.lastTaskToolUseTurn < ACTIVE_REMINDER_INTERVAL) return {};
+
+    const tasks = store.list();
+    // Shorter interval while in_progress; passed per-call so the shared config
+    // is never mutated.
+    evaluateToolResult(cadence, event.toolName, tasks.length > 0, {
+      ...cadenceConfig,
+      reminderInterval: intervalFor(tasks),
+    });
     return {};
   });
 
@@ -364,13 +447,14 @@ export default function (pi: ExtensionAPI) {
   // returns a transformed messages array used only for this one request.
   pi.on("context", async (event) => {
     if (!drainReminderForContext(cadence)) return {};
+    const tasks = store.list();
 
     return {
       messages: [
         ...event.messages,
         {
           role: "user" as const,
-          content: [{ type: "text" as const, text: SYSTEM_REMINDER }],
+          content: [{ type: "text" as const, text: buildSystemReminder(tasks) }],
           timestamp: Date.now(),
         },
       ],
