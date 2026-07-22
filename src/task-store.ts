@@ -83,7 +83,8 @@ export class TaskStore {
     if (!listIdOrPath) return;
     const isAbsPath = isAbsolute(listIdOrPath);
     const filePath = isAbsPath ? listIdOrPath : join(TASKS_DIR, `${listIdOrPath}.json`);
-    mkdirSync(dirname(filePath), { recursive: true });
+    // Directory is created lazily on the first write (acquireLock/save both
+    // mkdir it), so a session that never persists a task leaves no .pi/tasks/.
     this.filePath = filePath;
     this.lockPath = filePath + ".lock";
     this.load();

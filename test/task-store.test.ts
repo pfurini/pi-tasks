@@ -474,4 +474,22 @@ describe("TaskStore (absolute path)", () => {
 
     rmSync(parentDir, { recursive: true, force: true });
   });
+
+  it("creates the backing directory lazily — not on construction, but on first write", () => {
+    const parentDir = join(tmpdir(), `pi-tasks-lazy-${Date.now()}`);
+    const filePath = join(parentDir, "tasks.json");
+    try {
+      const store = new TaskStore(filePath);
+      // Constructing a store must not create the directory for a session that
+      // never persists a task.
+      expect(existsSync(parentDir)).toBe(false);
+
+      store.create("Task", "Desc");
+      // The first mutation creates it.
+      expect(existsSync(parentDir)).toBe(true);
+      expect(existsSync(filePath)).toBe(true);
+    } finally {
+      rmSync(parentDir, { recursive: true, force: true });
+    }
+  });
 });
