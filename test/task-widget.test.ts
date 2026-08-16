@@ -554,3 +554,56 @@ describe("formatDuration (via widget rendering)", () => {
     expect(lines[1]).toContain("↓ 4.1k");  // 4100 → "4.1k"
   });
 });
+
+describe("spinner animation timing", () => {
+  let store: TaskStore;
+  let widget: TaskWidget;
+  let ui: ReturnType<typeof mockUICtx>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    store = new TaskStore();
+    widget = new TaskWidget(store);
+    ui = mockUICtx();
+    widget.setUICtx(ui.ctx);
+    store.create("Long job", "d", "Working");
+    store.update("1", { status: "in_progress" });
+    widget.setActiveTask("1");
+  });
+
+  afterEach(() => {
+    widget.dispose();
+    vi.useRealTimers();
+  });
+
+  /** The spinner glyph is the first non-space character of the task line. */
+  const glyph = () => renderWidget(ui.state)[1].trim().split(" ")[0];
+
+  it("advances one frame per timer tick", () => {
+    const frames = [glyph()];
+    for (let i = 0; i < 3; i++) {
+      vi.advanceTimersByTime(150);
+      frames.push(glyph());
+    }
+    // Four consecutive, distinct frames.
+    expect(new Set(frames).size).toBe(4);
+  });
+
+  it("does not advance when task activity redraws the widget", () => {
+    // update() runs on every task mutation and on tool execution. Advancing the
+    // frame there tied animation speed to how busy the agent was, so the spinner
+    // raced ahead during bursts and stalled when nothing happened.
+    const before = glyph();
+    for (let i = 0; i < 5; i++) widget.update();
+
+    expect(glyph()).toBe(before);
+  });
+
+  it("still animates after an unrelated redraw", () => {
+    widget.update();
+    const before = glyph();
+    vi.advanceTimersByTime(150);
+
+    expect(glyph()).not.toBe(before);
+  });
+});

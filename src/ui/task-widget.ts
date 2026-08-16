@@ -127,10 +127,15 @@ export class TaskWidget {
     }
   }
 
-  /** Ensure the widget update timer is running. */
+  /** Ensure the widget update timer is running. The spinner advances here and
+   *  nowhere else: `update()` also runs on every task mutation and tool execution,
+   *  so incrementing there tied the animation speed to how busy the agent was. */
   ensureTimer() {
     if (!this.widgetInterval) {
-      this.widgetInterval = setInterval(() => this.update(), 150);
+      this.widgetInterval = setInterval(() => {
+        this.widgetFrame++;
+        this.update();
+      }, 150);
     }
   }
 
@@ -277,8 +282,6 @@ export class TaskWidget {
       clearInterval(this.widgetInterval);
       this.widgetInterval = undefined;
     }
-
-    this.widgetFrame++;
 
     // Transition: hidden → visible — register widget callback once
     if (!this.widgetRegistered) {
