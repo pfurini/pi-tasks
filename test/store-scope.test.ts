@@ -101,6 +101,41 @@ describe("taskScope: memory", () => {
   });
 });
 
+describe("taskScope: session, without a persisted session", () => {
+  // pi --no-session (and SessionManager.inMemory()) mints a session ID but never a
+  // session file. A session task file written for it is orphaned the moment pi exits.
+  it("keeps tasks in memory and leaves nothing on disk", async () => {
+    const mock = mockPi();
+    initExtension(mock.pi as any);
+    await mock.fireLifecycle("session_start", { reason: "startup" }, mockSessionCtx("s1", { persisted: false }));
+    await mock.executeTool("TaskCreate", { subject: "Ephemeral", description: "d" });
+
+    expect(existsSync(join(cwd, ".pi"))).toBe(false);
+    expect((await mock.executeTool("TaskList", {})).content[0].text).toContain("Ephemeral");
+  });
+
+  it("still writes a session file when the session is persisted", async () => {
+    const mock = mockPi();
+    initExtension(mock.pi as any);
+    await mock.fireLifecycle("session_start", { reason: "startup" }, mockSessionCtx("s1"));
+    await mock.executeTool("TaskCreate", { subject: "Durable", description: "d" });
+
+    expect(existsSync(sessionFile("s1"))).toBe(true);
+  });
+
+  it("does not fall back to a file when a later lifecycle event fires", async () => {
+    const mock = mockPi();
+    initExtension(mock.pi as any);
+    const ctx = mockSessionCtx("s1", { persisted: false });
+    await mock.fireLifecycle("session_start", { reason: "startup" }, ctx);
+    await mock.fireLifecycle("before_agent_start", {}, ctx);
+    await mock.fireLifecycle("turn_start", {}, ctx);
+    await mock.executeTool("TaskCreate", { subject: "Ephemeral", description: "d" });
+
+    expect(existsSync(join(cwd, ".pi"))).toBe(false);
+  });
+});
+
 describe("PI_TASKS override", () => {
   it("resolves a relative path against the working directory", async () => {
     process.env.PI_TASKS = "./custom/list.json";

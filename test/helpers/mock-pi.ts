@@ -100,9 +100,22 @@ export function mockCtx() {
   };
 }
 
-/** Mock ExtensionContext carrying a session ID, for session_start handling. */
-export function mockSessionCtx(sessionId: string) {
-  return { ...mockCtx(), sessionManager: { getSessionId: vi.fn(() => sessionId) } };
+/**
+ * Mock ExtensionContext carrying a session ID, for session_start handling.
+ *
+ * `getSessionFile` mirrors pi: a persisted session has one, and a session pi is not
+ * persisting (`pi --no-session`, `SessionManager.inMemory()`) reports a session ID
+ * but no file. Pass `{ persisted: false }` for the latter.
+ */
+export function mockSessionCtx(sessionId: string, opts?: { persisted?: boolean }) {
+  const sessionFile = opts?.persisted === false ? undefined : `/sessions/${sessionId}.jsonl`;
+  return {
+    ...mockCtx(),
+    sessionManager: {
+      getSessionId: vi.fn(() => sessionId),
+      getSessionFile: vi.fn(() => sessionFile),
+    },
+  };
 }
 
 /** Simulates the @tintinweb/pi-subagents extension: responds to ping + spawn RPCs and emits ready. */

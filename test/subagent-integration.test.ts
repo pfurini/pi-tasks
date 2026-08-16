@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import initExtension from "../src/index.js";
 import { TaskStore } from "../src/task-store.js";
 import { TaskWidget, type Theme, type UICtx } from "../src/ui/task-widget.js";
-import { installSubagentsMock, type MockEventBus, mockCtx, mockPi } from "./helpers/mock-pi.js";
+import { installSubagentsMock, type MockEventBus, mockCtx, mockPi, mockSessionCtx } from "./helpers/mock-pi.js";
 
 // Config is mocked rather than written to <cwd>/.pi/tasks-config.json: writing the
 // real file would clobber the user's project settings, and reading it would let the
@@ -50,10 +50,7 @@ describe("Session task rehydration", () => {
       delete process.env.PI_TASKS;
       const mock = mockPi();
       initExtension(mock.pi as any);
-      const ctx = {
-        ...mockCtx(),
-        sessionManager: { getSessionId: vi.fn(() => sessionId) },
-      };
+      const ctx = mockSessionCtx(sessionId);
 
       await mock.fireLifecycle("session_start", { reason: "reload" }, ctx);
 
@@ -94,10 +91,7 @@ describe("Session task rehydration", () => {
       delete process.env.PI_TASKS;
       const mock = mockPi();
       initExtension(mock.pi as any);
-      const ctx = {
-        ...mockCtx(),
-        sessionManager: { getSessionId: vi.fn(() => sessionId) },
-      };
+      const ctx = mockSessionCtx(sessionId);
 
       await mock.fireLifecycle("session_start", { reason: "resume" }, ctx);
 
@@ -121,7 +115,7 @@ describe("Session task rehydration", () => {
       const mock = mockPi();
       initExtension(mock.pi as any);
 
-      const ctxA = { ...mockCtx(), sessionManager: { getSessionId: vi.fn(() => sessionA) } };
+      const ctxA = mockSessionCtx(sessionA);
       await mock.fireLifecycle("session_start", { reason: "startup" }, ctxA);
       expect(ctxA.sessionManager.getSessionId).toHaveBeenCalledOnce();
 
@@ -129,7 +123,7 @@ describe("Session task rehydration", () => {
       // previously handled by the (never-emitted) session_switch event. Without
       // that reset, storeUpgraded stays true and getSessionId is never called
       // again, leaving the store stuck on session A.
-      const ctxB = { ...mockCtx(), sessionManager: { getSessionId: vi.fn(() => sessionB) } };
+      const ctxB = mockSessionCtx(sessionB);
       await mock.fireLifecycle("session_start", { reason: "new" }, ctxB);
       expect(ctxB.sessionManager.getSessionId).toHaveBeenCalledOnce();
     } finally {
@@ -149,13 +143,13 @@ describe("Session task rehydration", () => {
       const mock = mockPi();
       initExtension(mock.pi as any);
 
-      const ctxP = { ...mockCtx(), sessionManager: { getSessionId: vi.fn(() => parent) } };
+      const ctxP = mockSessionCtx(parent);
       await mock.fireLifecycle("session_start", { reason: "startup" }, ctxP);
 
       // /fork re-points to a brand-new (empty) session file. Without seeding, the
       // fork would silently lose the parent's tasks; with it, the fork gets an
       // independent copy that does not write back to the parent.
-      const ctxC = { ...mockCtx(), sessionManager: { getSessionId: vi.fn(() => child) } };
+      const ctxC = mockSessionCtx(child);
       await mock.fireLifecycle("session_start", { reason: "fork" }, ctxC);
 
       const forked = new TaskStore(childFile).list();

@@ -339,15 +339,40 @@ export default function (pi: ExtensionAPI) {
   // or tool_execution_start — whichever fires first).
   let storeUpgraded = false;
   let persistedTasksShown = false;
+  let agentsReattached = false;
   function upgradeStoreIfNeeded(ctx: ExtensionContext) {
     if (storeUpgraded) return;
     if (taskScope === "session" && !piTasks) {
-      const sessionId = ctx.sessionManager.getSessionId();
-      const path = resolveStorePath(sessionId);
+      // `pi --no-session` mints a session ID but never a session file. Keying off the
+      // ID alone would write tasks-<id>.json for a session that can never be resumed
+      // and is orphaned the moment pi exits: if pi is not persisting the conversation,
+      // don't persist the task list either.
+      const sessionId = ctx.sessionManager.getSessionFile() ? ctx.sessionManager.getSessionId() : undefined;
+      const path = sessionId ? resolveStorePath(sessionId) : undefined;
       store = new TaskStore(path);
       widget.setStore(store);
     }
     storeUpgraded = true;
+  }
+
+  /** Re-link persisted in-progress tasks to the subagents still running for them.
+   *  `agentTaskMap` lives only in this extension instance, so a reload starts empty
+   *  while the agents keep going — their completion events would then be dropped and
+   *  the tasks would stay in_progress forever. Everything needed is already on disk:
+   *  TaskExecute records the agent ID in task metadata.
+   *
+   *  Only in_progress tasks are relinked. A task reverted to pending keeps its
+   *  `metadata.agentId`, and relinking that would let a late event resurrect work the
+   *  user has already reset. Only runs once — the first caller wins. */
+  function reattachAgents() {
+    if (agentsReattached) return;
+    agentsReattached = true;
+    for (const task of store.list()) {
+      const agentId = task.metadata?.agentId;
+      if (task.status === "in_progress" && typeof agentId === "string" && agentId) {
+        agentTaskMap.set(agentId, task.id);
+      }
+    }
   }
 
   /** Restore widget on session start/resume if there's unfinished work.
@@ -478,6 +503,11 @@ export default function (pi: ExtensionAPI) {
     if (isSwitch) {
       storeUpgraded = false;
       persistedTasksShown = false;
+      agentsReattached = false;
+      // Task IDs restart at 1 in every session, so a mapping held over from the
+      // previous one points at an unrelated task here — the agent's completion would
+      // close a task it never ran. reattachAgents() rebuilds what this session owns.
+      agentTaskMap.clear();
       resetCadenceState(cadence);
       autoClear.reset();
       // Memory mode has no file to switch — clear tasks explicitly on /new.
@@ -488,6 +518,7 @@ export default function (pi: ExtensionAPI) {
 
     upgradeStoreIfNeeded(ctx); // re-points a session store once storeUpgraded is cleared
     if (forkSeed?.tasks.length) store.seed(forkSeed); // carry the parent's tasks into the fork
+    reattachAgents(); // subagents outlive a reload; relink them before events arrive
     // resume/reload/fork keep tasks; startup/new auto-clear an all-completed list.
     showPersistedTasks(reason === "reload" || reason === "resume" || reason === "fork");
 
@@ -503,6 +534,7 @@ export default function (pi: ExtensionAPI) {
     latestCtx = ctx;
     widget.setUICtx(ctx.ui as UICtx);
     upgradeStoreIfNeeded(ctx);
+    reattachAgents();
     showPersistedTasks();
     if (pendingWarning) {
       ctx.ui.notify(pendingWarning, "warning");
