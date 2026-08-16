@@ -131,18 +131,40 @@ export class TaskStore {
     this.load();
   }
 
-  /** Read store from disk (file-backed mode only). */
+  /**
+   * Read store from disk (file-backed mode only).
+   *
+   * `normalizeTask` hardens each record; this hardens the envelope around them.
+   * A truncated write, a bad merge or a hand edit can leave a file that parses
+   * but has no `tasks` array or no usable `nextId`, and both used to corrupt the
+   * store: the missing array threw mid-load and left it wiped, and the missing
+   * counter produced the task ID "NaN", then IDs restarting at "0" and colliding
+   * with live tasks. Anything unusable now leaves the current state alone.
+   */
   private load(): void {
     if (!this.filePath) return;
     if (!existsSync(this.filePath)) return;
     try {
-      const data: TaskStoreData = JSON.parse(readFileSync(this.filePath, "utf-8"));
-      this.nextId = data.nextId;
-      this.tasks.clear();
-      for (const t of data.tasks) {
-        this.tasks.set(t.id, normalizeTask(t));
+      const data: unknown = JSON.parse(readFileSync(this.filePath, "utf-8"));
+      if (!data || typeof data !== "object") return;
+      const { nextId, tasks } = data as Partial<TaskStoreData>;
+      if (!Array.isArray(tasks)) return;
+
+      // Build the replacement before touching the live state, so a bad record
+      // can't leave the store half-loaded.
+      const loaded = new Map<string, Task>();
+      let maxId = 0;
+      for (const t of tasks) {
+        if (!t || typeof t !== "object" || typeof t.id !== "string") continue;
+        loaded.set(t.id, normalizeTask(t));
+        const numericId = Number(t.id);
+        if (Number.isFinite(numericId) && numericId > maxId) maxId = numericId;
       }
-    } catch { /* corrupt file — start fresh */ }
+      this.tasks = loaded;
+      // Every future task ID comes from this counter, so it has to clear the IDs
+      // already in use — whether the file omitted it or recorded a stale one.
+      this.nextId = typeof nextId === "number" && Number.isInteger(nextId) && nextId > maxId ? nextId : maxId + 1;
+    } catch { /* unreadable or not JSON — keep the state we have */ }
   }
 
   /** Write store to disk atomically (file-backed mode only). */
