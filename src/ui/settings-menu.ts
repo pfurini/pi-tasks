@@ -93,7 +93,7 @@ export async function openSettingsMenu(
           "never: completed tasks stay visible until manually cleared. " +
           "on_list_complete: cleared automatically after all tasks are done. " +
           "on_task_complete: each task cleared shortly after it completes. " +
-          `Clearing lags ~${clearDelayTurns} turns.`,
+          `Clearing lags ~${clearDelayTurns} turns, or happens right away when a later batch of work starts.`,
         currentValue: cfg.autoClearCompleted ?? "on_list_complete",
         values: ["never", "on_list_complete", "on_task_complete"],
       },

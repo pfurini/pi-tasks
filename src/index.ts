@@ -431,7 +431,17 @@ export default function (pi: ExtensionAPI) {
     latestCtx = ctx;
     widget.setUICtx(ctx.ui as UICtx);
     initializeStoreForContext(ctx);
-    if (autoClear.onTurnStart(cadence.currentTurn)) widget.update();
+    if (autoClear.onTurnStart(cadence.currentTurn)) {
+      if (taskScope === "session") store.deleteFileIfEmpty();
+      widget.update();
+    }
+  });
+
+  // The end of a run is the only signal that separates a new batch of tasks from the
+  // same batch still being built — the store looks identical either way. Nothing is
+  // cleared here; this only marks the boundary for the next TaskCreate.
+  pi.on("agent_settled", async () => {
+    autoClear.onRunEnded();
   });
 
   // ── Token usage tracking + stale-task detection ──
@@ -543,7 +553,11 @@ export default function (pi: ExtensionAPI) {
     if (forkSeed?.tasks.length) store.seed(forkSeed); // carry the parent's tasks into the fork
     reattachAgents(); // subagents outlive a reload; relink them before events arrive
     // resume/reload/fork keep tasks; startup/new auto-clear an all-completed list.
-    showPersistedTasks(reason === "reload" || reason === "resume" || reason === "fork");
+    const keepsTasks = reason === "reload" || reason === "resume" || reason === "fork";
+    showPersistedTasks(keepsTasks);
+    // Those tasks are shown for review, but the run that produced them ended with the
+    // session before this one — so the next batch must not be added to them either.
+    if (keepsTasks) autoClear.onRunEnded();
 
     if (pendingWarning) {
       ctx.ui.notify(pendingWarning, "warning");
@@ -635,7 +649,10 @@ All tasks are created with status \`pending\`.
     }),
 
     execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      autoClear.resetBatchCountdown();
+      // A finished list must not collect the batch that follows it. The turn countdowns
+      // cannot be relied on for that: they only tick at `turn_start`, so a run that ends
+      // right after its last completion freezes one mid-count.
+      autoClear.startNewBatch();
       const meta = params.metadata ?? {};
       if (params.agentType) meta.agentType = params.agentType;
       const task = store.create(params.subject, params.description, params.activeForm, Object.keys(meta).length > 0 ? meta : undefined);

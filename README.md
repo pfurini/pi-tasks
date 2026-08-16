@@ -214,10 +214,12 @@ The `autoClearCompleted` setting controls automatic cleanup of completed tasks:
 | Mode | Behaviour |
 |------|-----------|
 | `never` | Completed tasks stay visible until manually cleared via `/tasks` → Clear completed |
-| `on_list_complete` **(default)** | Cleared after all tasks are done and a few idle turns pass |
+| `on_list_complete` **(default)** | Cleared once all tasks are done and a few idle turns pass |
 | `on_task_complete` | Each completed task cleared individually after a few turns |
 
 Both auto-clear modes use a turn-based delay for non-jarring UX — tasks linger briefly so you see the completion before they disappear.
+
+In either mode, a list with nothing left to do is also retired when a *later* batch of work begins, however long it has been sitting there. The turn delay only runs while the conversation does, so a list completed just before the agent stopped would otherwise still be on screen when the next task arrived, and that task would join it. The finished list stays visible while you read it and through any follow-up question, and goes when the agent starts new work. Tasks the agent adds to a list it is still working through are unaffected, and task IDs stay monotonic and are never reused.
 
 Settings (`taskScope`, `autoCascade`, `autoClearCompleted`, plus the [widget display settings](#widget-display-settings) `sortOrder` / `maxVisible` / `showAll` / `hiddenAt`) changed through `/tasks` are saved as project overrides in `<workspace>/.pi/tasks-config.json`.
 

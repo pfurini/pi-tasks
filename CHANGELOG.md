@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A new batch of tasks no longer lands under the completed list from the last one.** Both auto-clear modes count in turns and only tick at `turn_start`, so the countdown stops when the agent does — and a run that ends right after its final completion, which is the usual shape, freezes one mid-count. The finished list then stayed on screen, and the next batch was appended to it (`#4` under three completed rows) rather than starting fresh, which reset the countdown again; across a session of short batches the list never cleared. A task created after the agent has stopped now retires a list that has nothing left to do, before it is added to it. The finished list still stays visible while you read it and through follow-up questions, a list with unfinished work in it is untouched, and task IDs remain monotonic. Tasks the agent adds while working through a list are unaffected — that is the same batch taking shape, not a new one, which is why the run boundary rather than the list's state decides. Also fixes the same problem on a resumed session, where the countdown never started at all. (Reported in [#51](https://github.com/tintinweb/pi-tasks/pull/51) — thanks [@ElJeskos](https://github.com/ElJeskos) — and [#56](https://github.com/tintinweb/pi-tasks/issues/56) — thanks [@kunaaal13](https://github.com/kunaaal13))
+- **An auto-cleared session task file is deleted rather than left behind empty.** Clearing writes the emptied list back to `.pi/tasks/tasks-<sessionId>.json`; the manual and session-start clear paths already removed the file afterwards, the automatic one did not.
+
 ## [0.7.3] - 2026-08-16
 
 ### Fixed
