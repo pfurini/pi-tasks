@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`TaskOutput` and `TaskStop` now act on the task an agent ID refers to.** Both tools accept an agent ID in place of a task ID and resolve it through the agent→task map, but then kept querying the store with the original argument. `TaskStop` therefore stopped the subagent and reported success while leaving the task `in_progress` and its widget spinner running, and `TaskOutput` reported the status captured before the wait — visible on file-backed stores, where each read deserializes a fresh object.
+- **Releasing a file lock no longer deletes a lock that has changed hands.** Stale-lock detection asks the local process table whether the holder is alive, so a session in another PID namespace — a container, or a list shared over NFS — can read a live holder's PID as dead and reclaim the lock. The original holder then deleted the successor's lock on the way out, leaving two sessions writing the file at once. Lock files now carry a `<pid>:<uuid>` token and are only removed by the session that wrote them.
+- **A lock file left behind without a PID no longer wedges a shared task list.** `acquireLock()` writes the lock file and then its PID, so a crash in between leaves an empty lock naming no process. Stale-lock detection only recognised locks naming a *dead* process, so every later mutation burned the full 5-second retry budget and threw — permanently, until the file was deleted by hand. An unreadable PID now counts as stale too, after a couple of polls so a live acquirer in that same window is not evicted.
+- **`TaskOutput` rejects an empty `task_id`.** It accepts agent IDs and matches them by prefix, and every ID starts with the empty string — so an empty argument silently reported on whichever background agent the internal map yielded first. It now fails with `task_id is required`, matching `TaskStop`.
+
 ## [0.7.2] - 2026-07-22
 
 ### Added

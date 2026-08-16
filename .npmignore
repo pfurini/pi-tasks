@@ -5,6 +5,10 @@ biome.json
 .git/
 .gitignore
 
+# Internal contributor/agent instructions — not for distribution
+AGENTS.md
+CLAUDE.md
+
 # Documentation
 PLAN.md
 SUMMARY.md

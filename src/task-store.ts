@@ -5,6 +5,7 @@
  * Shared (PI_TASK_LIST_ID set): ~/.pi/tasks/<listId>.json with file locking.
  */
 
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
@@ -33,21 +34,33 @@ const TASKS_DIR = join(homedir(), ".pi", "tasks");
 const LOCK_RETRY_MS = 50;
 const LOCK_MAX_RETRIES = 100; // 5s max
 
-/** Simple file-based locking. */
-function acquireLock(lockPath: string): void {
+/**
+ * Simple file-based locking. Returns the token written into the lock file, which
+ * must be handed back to `releaseLock`.
+ *
+ * The token is `<pid>:<uuid>`: the PID prefix is what the staleness check below
+ * parses, and the UUID suffix makes it unique so a holder can tell its own lock
+ * from a successor's. Both halves matter — see `releaseLock`.
+ */
+function acquireLock(lockPath: string): string {
   mkdirSync(dirname(lockPath), { recursive: true });
+  const token = `${process.pid}:${randomUUID()}`;
 
   for (let i = 0; i < LOCK_MAX_RETRIES; i++) {
     try {
       // O_EXCL: fail if file exists
-      writeFileSync(lockPath, `${process.pid}`, { flag: "wx" });
-      return;
+      writeFileSync(lockPath, token, { flag: "wx" });
+      return token;
     } catch (e: any) {
       if (e.code === "EEXIST") {
         // Check for stale lock (process no longer running)
         try {
           const pid = parseInt(readFileSync(lockPath, "utf-8"), 10);
-          if (pid && !isProcessRunning(pid)) {
+          // A lock naming a dead process is stale. So is one with no readable PID,
+          // but only after a couple of polls: the file is created before the PID is
+          // written to it, so a live acquirer can look unparseable for a moment —
+          // one that crashed in that window looks that way forever.
+          if (pid > 0 ? !isProcessRunning(pid) : i >= 2) {
             unlinkSync(lockPath);
             continue;
           }
@@ -63,8 +76,17 @@ function acquireLock(lockPath: string): void {
   throw new Error(`Failed to acquire lock: ${lockPath}`);
 }
 
-function releaseLock(lockPath: string): void {
-  try { unlinkSync(lockPath); } catch { /* ignore */ }
+/**
+ * Release a lock, but only if we still hold it. A lock can be reclaimed out from
+ * under a live holder — `isProcessRunning` answers from the local process table,
+ * so a session in another PID namespace (container, or a list shared over NFS)
+ * can read our PID as dead. Without the token check we would then delete the
+ * successor's lock and two sessions would write the file at once.
+ */
+function releaseLock(lockPath: string, token: string): void {
+  try {
+    if (readFileSync(lockPath, "utf-8") === token) unlinkSync(lockPath);
+  } catch { /* ignore — already gone */ }
 }
 
 function isProcessRunning(pid: number): boolean {
@@ -139,14 +161,14 @@ export class TaskStore {
   /** Execute a mutation with file locking (if file-backed). */
   private withLock<T>(fn: () => T): T {
     if (!this.lockPath) return fn();
-    acquireLock(this.lockPath);
+    const token = acquireLock(this.lockPath);
     try {
       this.load(); // Re-read latest state
       const result = fn();
       this.save();
       return result;
     } finally {
-      releaseLock(this.lockPath);
+      releaseLock(this.lockPath, token);
     }
   }
 

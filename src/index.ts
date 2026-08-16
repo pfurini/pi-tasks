@@ -877,6 +877,9 @@ Set up task dependencies:
 
     async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
       const { task_id, block, timeout } = params;
+      // Reject an empty id up front: every agent ID starts with "", so the prefix
+      // match below would resolve it to whichever agent the map yields first.
+      if (!task_id) throw new Error("task_id is required");
 
       const processOutput = tracker.getOutput(task_id);
       if (!processOutput) {
@@ -904,14 +907,18 @@ Set up task dependencies:
               const unsubFail = pi.events.on("subagents:failed", (d: unknown) => {
                 if ((d as any).id === task.metadata?.agentId) { unsubOk(); unsubFail(); cleanup(); }
               });
-              // Re-check in case status changed between the outer check and listener registration
-              const current = store.get(task_id);
+              // Re-read before committing to the wait. Nothing awaits since the outer
+              // check, so this only differs on a shared file-backed list, where
+              // store.get() reloads and another session may have finished the task.
+              const current = store.get(resolvedId);
               if (current && current.status !== "in_progress") { unsubOk(); unsubFail(); cleanup(); }
               signal?.addEventListener("abort", () => { unsubOk(); unsubFail(); cleanup(); }, { once: true });
             });
           }
-          const updated = store.get(task_id) ?? task;
-          return textResult(`Task #${task_id} [${updated.status}] — subagent ${task.metadata.agentId}`);
+          // Re-read by resolved ID — `task` predates the wait, and a file-backed
+          // store deserializes a fresh object on every load, so it is stale here.
+          const updated = store.get(resolvedId) ?? task;
+          return textResult(`Task #${resolvedId} [${updated.status}] — subagent ${task.metadata.agentId}`);
         }
         throw new Error(`No background process for task ${task_id}`);
       }
@@ -964,12 +971,12 @@ Set up task dependencies:
         }
         const task = store.get(resolvedId);
         if (task?.metadata?.agentId && task.status === "in_progress") {
-          store.update(taskId, { status: "completed" });
-          autoClear.trackCompletion(taskId, cadence.currentTurn);
+          store.update(resolvedId, { status: "completed" });
+          autoClear.trackCompletion(resolvedId, cadence.currentTurn);
           await stopSubagent(task.metadata.agentId);
-          widget.setActiveTask(taskId, false);
+          widget.setActiveTask(resolvedId, false);
           widget.update();
-          return textResult(`Task #${taskId} stopped successfully`);
+          return textResult(`Task #${resolvedId} stopped successfully`);
         }
         throw new Error(`No running background process for task ${taskId}`);
       }

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -516,6 +516,27 @@ describe("TaskStore (absolute path)", () => {
       expect(existsSync(filePath)).toBe(true);
     } finally {
       rmSync(parentDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("TaskStore (list ID resolution)", () => {
+  it("resolves a bare list ID under the user's home directory, not the working directory", async () => {
+    // PI_TASKS=my-list is a shared-list name, not a path — it must land in
+    // ~/.pi/tasks/. TASKS_DIR is computed at module load, so the module has to be
+    // re-imported after HOME is stubbed.
+    const home = mkdtempSync(join(tmpdir(), "pi-tasks-home-"));
+    vi.stubEnv("HOME", home);
+    vi.resetModules();
+    try {
+      const { TaskStore: FreshTaskStore } = await import("../src/task-store.js");
+      new FreshTaskStore("my-list").create("Shared list task", "d");
+
+      expect(existsSync(join(home, ".pi", "tasks", "my-list.json"))).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+      rmSync(home, { recursive: true, force: true });
     }
   });
 });
