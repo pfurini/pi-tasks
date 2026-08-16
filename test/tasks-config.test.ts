@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { TaskSortOrder } from "../src/task-sort.js";
 import { loadGlobalTasksConfig, loadTasksConfig, saveTasksConfig } from "../src/tasks-config.js";
 
 function writeJson(path: string, value: unknown): void {
@@ -98,6 +99,34 @@ describe("tasks config", () => {
 
     expect(loadTasksConfig(cwd, agentDir)).toEqual({ autoCascade: false, maxVisible: 30 });
     expect(JSON.parse(readFileSync(projectConfigPath, "utf-8"))).toEqual({ autoCascade: false, maxVisible: 30 });
+  });
+
+  it("round-trips a custom sortOrder spec", () => {
+    const sortOrder: TaskSortOrder = [
+      { field: "status", rank: ["in_progress", "pending", "completed"] },
+      { field: "id" },
+    ];
+    writeJson(projectConfigPath, { sortOrder });
+
+    expect(loadTasksConfig(cwd, agentDir)).toEqual({ sortOrder });
+  });
+
+  it("does not copy a global sortOrder spec into the project override", () => {
+    const sortOrder: TaskSortOrder = [{ field: "updatedAt", direction: "desc" }];
+    writeJson(globalConfigPath, { sortOrder });
+
+    saveTasksConfig(loadTasksConfig(cwd, agentDir), cwd, agentDir);
+
+    expect(JSON.parse(readFileSync(projectConfigPath, "utf-8"))).toEqual({});
+  });
+
+  it("writes a sortOrder spec that differs from the global default", () => {
+    writeJson(globalConfigPath, { sortOrder: "status" });
+    const sortOrder: TaskSortOrder = [{ field: "id", direction: "desc" }];
+
+    saveTasksConfig({ sortOrder }, cwd, agentDir);
+
+    expect(JSON.parse(readFileSync(projectConfigPath, "utf-8"))).toEqual({ sortOrder });
   });
 
   it("writes an empty project override object when effective settings match global defaults", () => {

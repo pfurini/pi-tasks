@@ -9,26 +9,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
+import { sortTasks, type TaskSortOrder } from "./task-sort.js";
 import type { Task, TaskStatus, TaskStoreData } from "./types.js";
-
-function sortById(a: Task, b: Task): number {
-  return Number(a.id) - Number(b.id);
-}
-
-function sortByStatus(a: Task, b: Task): number {
-  const rank = (s: string) => s === "completed" ? 0 : s === "in_progress" ? 1 : 2;
-  return rank(a.status) - rank(b.status) || Number(a.id) - Number(b.id);
-}
-
-function sortByRecent(a: Task, b: Task): number {
-  return b.updatedAt - a.updatedAt || Number(b.id) - Number(a.id);
-}
-
-function sortByOldest(a: Task, b: Task): number {
-  return a.updatedAt - b.updatedAt || Number(a.id) - Number(b.id);
-}
-
-const SORT_FNS = { id: sortById, status: sortByStatus, recent: sortByRecent, oldest: sortByOldest };
 
 const TASKS_DIR = join(homedir(), ".pi", "tasks");
 const LOCK_RETRY_MS = 50;
@@ -221,9 +203,9 @@ export class TaskStore {
   }
 
   /** List all tasks, sorted by the given order (defaults to ID ascending). */
-  list(sortOrder: "id" | "status" | "recent" | "oldest" = "id"): Task[] {
+  list(sortOrder: TaskSortOrder = "id"): Task[] {
     if (this.filePath) this.load();
-    return Array.from(this.tasks.values()).sort(SORT_FNS[sortOrder]);
+    return sortTasks(Array.from(this.tasks.values()), sortOrder);
   }
 
   update(id: string, fields: {

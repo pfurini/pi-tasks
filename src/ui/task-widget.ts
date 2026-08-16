@@ -174,12 +174,18 @@ export class TaskWidget {
     const spinnerChar = SPINNER[this.widgetFrame % SPINNER.length];
     const lines: string[] = [truncate(theme.fg("accent", "●") + " " + theme.fg("accent", statusText))];
 
+    // Collapsing only decides what goes in the list; the visible-limit logic below
+    // then runs unchanged over whatever remains.
+    const collapseCompleted = this.config.collapseCompleted ?? false;
+    const listed = collapseCompleted ? tasks.filter(t => t.status !== "completed") : tasks;
     const showAll = this.config.showAll ?? false;
     const limit = this.config.maxVisible ?? DEFAULT_MAX_VISIBLE_TASKS;
-    const hiddenAt = this.config.hiddenAt ?? "bottom";
-    const visible = showAll ? tasks : TRUNCATE_FNS[hiddenAt](tasks, limit);
+    // Narrowed rather than defaulted: config is hand-editable JSON, and an
+    // unrecognised value would index TRUNCATE_FNS to undefined and blank the widget.
+    const hiddenAt = this.config.hiddenAt === "top" ? "top" : "bottom";
+    const visible = showAll ? listed : TRUNCATE_FNS[hiddenAt](listed, limit);
 
-    const hiddenCount = tasks.length - visible.length;
+    const hiddenCount = listed.length - visible.length;
     const overflowLine = hiddenCount > 0
       ? truncate(theme.fg("dim", `    … and ${hiddenCount} more`))
       : undefined;
@@ -244,6 +250,9 @@ export class TaskWidget {
 
     if (overflowLine && hiddenAt !== "top") {
       lines.push(overflowLine);
+    }
+    if (collapseCompleted && completed.length > 0) {
+      lines.push(truncate(`  ${theme.fg("success", "✔")} ${theme.fg("dim", `${completed.length} completed`)}`));
     }
 
     return lines;

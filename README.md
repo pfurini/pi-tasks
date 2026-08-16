@@ -57,14 +57,34 @@ The extension renders a persistent widget above the editor:
 
 How tasks are sorted and how many are shown can be configured via `/tasks` → Settings (saved as project overrides in `.pi/tasks-config.json`). All defaults preserve the original behaviour.
 
+> **[→ Customizing the task widget](CUSTOMIZING.md)** — the full guide: global vs. project config, sort presets, writing your own sort order, and recipes.
+
 | Setting | Values | Default | Behaviour |
 |---------|--------|---------|-----------|
-| `sortOrder` | `id` / `status` / `recent` / `oldest` | `id` | `id` = creation order; `status` groups completed → in-progress → pending; `recent`/`oldest` = by last-updated time |
+| `sortOrder` | `id` / `status` / `active` / `recent` / `oldest`, or a [sort spec](CUSTOMIZING.md#writing-your-own-sort-order) | `id` | `id` = creation order; `status` groups completed → in-progress → pending; `active` is the reverse grouping (in-progress → pending → completed); `recent`/`oldest` = by last-updated time |
+| `collapseCompleted` | `true` / `false` | `false` | When `true`, completed tasks are replaced by a single `✔ N completed` line at the bottom |
 | `maxVisible` | `5`–`100` | `10` | Caps how many task lines the widget shows (ignored when `showAll` is on) |
-| `showAll` | `true` / `false` | `false` | When `true`, every task is shown regardless of `maxVisible` |
+| `showAll` | `true` / `false` | `false` | When `true`, every listed task is shown regardless of `maxVisible` |
 | `hiddenAt` | `bottom` / `top` | `bottom` | When the list overflows `maxVisible`, where the `… and N more` collapse happens. `top` pairs well with `sortOrder: status` to keep active work visible and fold completed tasks away |
 
-> Note: the widget's `status` order is completed-first (so finished work collapses at the top with `hiddenAt: top`), which is the reverse of the `TaskList` tool's pending-first order.
+> Note: the widget's `status` order is completed-first (so finished work collapses at the top with `hiddenAt: top`), which is the reverse of the `TaskList` tool's pending-first order. Use `active` for pending-first.
+
+`collapseCompleted` and the visible limit are independent: collapsing decides what goes in the list, and `maxVisible` / `showAll` / `hiddenAt` then apply to whatever remains.
+
+For an order the presets don't cover, `sortOrder` also accepts a **sort spec** — an ordered list of comparison keys, written into `tasks-config.json`:
+
+```json
+{
+  "sortOrder": [
+    { "field": "status", "rank": ["in_progress", "pending", "completed"] },
+    { "field": "id" }
+  ]
+}
+```
+
+See [Writing your own sort order](CUSTOMIZING.md#writing-your-own-sort-order) for the full key reference and recipes.
+
+> Configuration is data, never code. There is deliberately no executable config file, so nothing in a cloned repository's `.pi/` can run on your machine.
 
 ## Tools
 
@@ -221,7 +241,7 @@ Both auto-clear modes use a turn-based delay for non-jarring UX — tasks linger
 
 In either mode, a list with nothing left to do is also retired when a *later* batch of work begins, however long it has been sitting there. The turn delay only runs while the conversation does, so a list completed just before the agent stopped would otherwise still be on screen when the next task arrived, and that task would join it. The finished list stays visible while you read it and through any follow-up question, and goes when the agent starts new work. Tasks the agent adds to a list it is still working through are unaffected, and task IDs stay monotonic and are never reused.
 
-Settings (`taskScope`, `autoCascade`, `autoClearCompleted`, plus the [widget display settings](#widget-display-settings) `sortOrder` / `maxVisible` / `showAll` / `hiddenAt`) changed through `/tasks` are saved as project overrides in `<workspace>/.pi/tasks-config.json`.
+Settings (`taskScope`, `autoCascade`, `autoClearCompleted`, plus the [widget display settings](#widget-display-settings) `sortOrder` / `collapseCompleted` / `maxVisible` / `showAll` / `hiddenAt`) changed through `/tasks` are saved as project overrides in `<workspace>/.pi/tasks-config.json`.
 
 ### Global defaults
 
@@ -236,6 +256,8 @@ For example, enable auto-cascade by default for every project:
 ```
 
 The `/tasks` settings menu writes only project overrides. Changing another setting in a project does not copy global defaults into that project's config.
+
+See [Customizing the task widget](CUSTOMIZING.md#where-config-lives) for worked examples of how the two files merge.
 
 ### Override via environment variables
 

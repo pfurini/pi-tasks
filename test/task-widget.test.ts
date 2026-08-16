@@ -253,6 +253,18 @@ describe("TaskWidget", () => {
     expect(lines.some(l => l.includes("Done 3"))).toBe(false);
   });
 
+  it("truncates from bottom when hiddenAt holds an unrecognised value", () => {
+    widget = new TaskWidget(store, { hiddenAt: "middle" as "top", maxVisible: 3 });
+    widget.setUICtx(ui.ctx);
+    for (let i = 1; i <= 5; i++) store.create(`Task ${i}`, "Desc");
+    widget.update();
+
+    const lines = renderWidget(ui.state);
+    expect(lines).toHaveLength(5);
+    expect(lines[1]).toContain("Task 1");
+    expect(lines[4]).toContain("2 more");
+  });
+
   it("truncates from bottom by default", () => {
     widget = new TaskWidget(store, { maxVisible: 3 });
     widget.setUICtx(ui.ctx);
@@ -266,6 +278,89 @@ describe("TaskWidget", () => {
     expect(lines[3]).toContain("Task 3");
     expect(lines[4]).toContain("2 more");
     expect(lines.some(l => l.includes("Task 4"))).toBe(false);
+  });
+
+  describe("collapseCompleted", () => {
+    /** 2 completed (#1,#2), 1 in_progress (#3), 2 pending (#4,#5). */
+    function seed() {
+      for (let i = 1; i <= 5; i++) store.create(`Task ${i}`, "Desc");
+      store.update("1", { status: "completed" });
+      store.update("2", { status: "completed" });
+      store.update("3", { status: "in_progress" });
+    }
+
+    it("replaces completed tasks with a single count line", () => {
+      widget = new TaskWidget(store, { collapseCompleted: true });
+      widget.setUICtx(ui.ctx);
+      seed();
+      widget.update();
+
+      const lines = renderWidget(ui.state);
+      // header + #3 #4 #5 + count line
+      expect(lines).toHaveLength(5);
+      expect(lines.some(l => l.includes("Task 1"))).toBe(false);
+      expect(lines.some(l => l.includes("Task 2"))).toBe(false);
+      expect(lines[lines.length - 1]).toContain("2 completed");
+    });
+
+    it("leaves the header counts untouched", () => {
+      widget = new TaskWidget(store, { collapseCompleted: true });
+      widget.setUICtx(ui.ctx);
+      seed();
+      widget.update();
+
+      expect(renderWidget(ui.state)[0]).toContain("5 tasks (2 done, 1 in progress, 2 open)");
+    });
+
+    it("applies the visible limit to the remaining tasks only", () => {
+      widget = new TaskWidget(store, { collapseCompleted: true, maxVisible: 2 });
+      widget.setUICtx(ui.ctx);
+      seed();
+      widget.update();
+
+      const lines = renderWidget(ui.state);
+      // header + #3 #4 + overflow + count line
+      expect(lines).toHaveLength(5);
+      expect(lines[1]).toContain("Task 3");
+      expect(lines[2]).toContain("Task 4");
+      // the overflow count excludes the collapsed completed tasks
+      expect(lines[3]).toContain("1 more");
+      expect(lines[4]).toContain("2 completed");
+    });
+
+    it("emits no count line when nothing is completed", () => {
+      widget = new TaskWidget(store, { collapseCompleted: true });
+      widget.setUICtx(ui.ctx);
+      for (let i = 1; i <= 3; i++) store.create(`Task ${i}`, "Desc");
+      widget.update();
+
+      const lines = renderWidget(ui.state);
+      expect(lines).toHaveLength(4);
+      expect(lines.some(l => l.includes("completed"))).toBe(false);
+    });
+
+    it("stays visible as header plus count line when everything is completed", () => {
+      widget = new TaskWidget(store, { collapseCompleted: true });
+      widget.setUICtx(ui.ctx);
+      for (let i = 1; i <= 3; i++) store.create(`Task ${i}`, "Desc");
+      for (let i = 1; i <= 3; i++) store.update(String(i), { status: "completed" });
+      widget.update();
+
+      const lines = renderWidget(ui.state);
+      expect(lines).toHaveLength(2);
+      expect(lines[1]).toContain("3 completed");
+    });
+
+    it("lists completed tasks individually when off", () => {
+      widget = new TaskWidget(store, { collapseCompleted: false });
+      widget.setUICtx(ui.ctx);
+      seed();
+      widget.update();
+
+      const lines = renderWidget(ui.state);
+      expect(lines).toHaveLength(6);
+      expect(lines[1]).toContain("Task 1");
+    });
   });
 
   it("sorts tasks by status when sortOrder is 'status'", () => {
@@ -283,6 +378,32 @@ describe("TaskWidget", () => {
     expect(lines[1]).toContain("Completed task");
     expect(lines[2]).toContain("In progress task");
     expect(lines[3]).toContain("Pending task");
+  });
+
+  it("sorts active work first when sortOrder is 'active'", () => {
+    widget = new TaskWidget(store, { sortOrder: "active" });
+    widget.setUICtx(ui.ctx);
+    store.create("Pending task", "Desc");            // #1
+    store.create("Completed task", "Desc");          // #2
+    store.create("In progress task", "Desc");        // #3
+    store.update("2", { status: "completed" });
+    store.update("3", { status: "in_progress" });
+    widget.update();
+
+    const lines = renderWidget(ui.state);
+    expect(lines[1]).toContain("In progress task");
+    expect(lines[2]).toContain("Pending task");
+    expect(lines[3]).toContain("Completed task");
+  });
+
+  it("honours a custom sort spec from config", () => {
+    widget = new TaskWidget(store, { sortOrder: [{ field: "id", direction: "desc" }] });
+    widget.setUICtx(ui.ctx);
+    for (let i = 1; i <= 3; i++) store.create(`Task ${i}`, "Desc");
+    widget.update();
+
+    const lines = renderWidget(ui.state);
+    expect(lines.slice(1).map(l => l.match(/#(\d+)/)?.[1])).toEqual(["3", "2", "1"]);
   });
 
   it("defaults to ID order when sortOrder is unset", () => {
