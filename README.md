@@ -198,8 +198,12 @@ Task storage is controlled by the `taskScope` setting (`/tasks` → Settings →
 | Mode | File | Behaviour |
 |------|------|-----------|
 | `memory` | *(none)* | In-memory only — tasks lost when session ends |
-| `session` **(default)** | `<cwd>/.pi/tasks/tasks-<sessionId>.json` | Per-session file — isolated between sessions, survives resume |
-| `project` | `<cwd>/.pi/tasks/tasks.json` | Shared across all sessions in the project |
+| `session` **(default)** | `<workspace>/.pi/tasks/tasks-<sessionId>.json` | Per-session file — isolated between sessions, survives resume |
+| `project` | `<workspace>/.pi/tasks/tasks.json` | Shared across all sessions in the project |
+
+`<workspace>` is the directory pi reports for the session — the same one its file tools operate in. That is normally where you started pi; it differs only when a session is opened by an explicit path from another project, or when a host serves sessions from elsewhere.
+
+Under `session` scope, tasks stay in memory whenever pi is not persisting the session (`pi --no-session`) — there is no session for the file to belong to, so none is written. `project` scope still writes its shared list, since that belongs to the project rather than the session.
 
 On new session start, if all persisted tasks are completed they are auto-cleared for a clean slate. On session resume, all tasks (including completed) are shown so the user can review progress. Empty session files are automatically deleted when all tasks are cleared.
 
@@ -215,11 +219,11 @@ The `autoClearCompleted` setting controls automatic cleanup of completed tasks:
 
 Both auto-clear modes use a turn-based delay for non-jarring UX — tasks linger briefly so you see the completion before they disappear.
 
-Settings (`taskScope`, `autoCascade`, `autoClearCompleted`, plus the [widget display settings](#widget-display-settings) `sortOrder` / `maxVisible` / `showAll` / `hiddenAt`) changed through `/tasks` are saved as project overrides in `<cwd>/.pi/tasks-config.json`.
+Settings (`taskScope`, `autoCascade`, `autoClearCompleted`, plus the [widget display settings](#widget-display-settings) `sortOrder` / `maxVisible` / `showAll` / `hiddenAt`) changed through `/tasks` are saved as project overrides in `<workspace>/.pi/tasks-config.json`.
 
 ### Global defaults
 
-Put settings that should apply across projects in `<agent-dir>/tasks-config.json` (`~/.pi/agent/tasks-config.json` by default). The agent directory follows pi's configured agent path. Project settings in `<cwd>/.pi/tasks-config.json` take precedence key by key.
+Put settings that should apply across projects in `<agent-dir>/tasks-config.json` (`~/.pi/agent/tasks-config.json` by default). The agent directory follows pi's configured agent path. Project settings in `<workspace>/.pi/tasks-config.json` take precedence key by key.
 
 For example, enable auto-cascade by default for every project:
 
@@ -238,7 +242,7 @@ The `/tasks` settings menu writes only project overrides. Changing another setti
 | `PI_TASKS` | `off` | In-memory only (CI/automation) |
 | `PI_TASKS` | `sprint-1` | Named shared list at `~/.pi/tasks/sprint-1.json` |
 | `PI_TASKS` | `/abs/path/tasks.json` | Explicit absolute file path |
-| `PI_TASKS` | `./tasks.json` | Relative path resolved from cwd |
+| `PI_TASKS` | `./tasks.json` | Relative path resolved from the session workspace |
 | *(unset)* | | Uses `taskScope` setting (default: `session`) |
 | `PI_TASKS_DEBUG` | `1` | Trace RPC communication (request/reply/timeout) and spawn errors to stderr |
 
