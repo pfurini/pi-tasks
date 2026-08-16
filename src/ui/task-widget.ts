@@ -43,7 +43,9 @@ export type UICtx = {
   ): void;
 };
 
-/** Star spinner frames for animated active task indicator (matches Claude Code). */
+/** Star spinner frames for the animated active-task indicator. Claude Code's own
+ *  spinner is a shorter mirrored sequence (`· ✢ ✳ ✶ ✻ ✽` and its reverse, with a
+ *  ghostty variant); this walks the dingbat block instead. Deliberately ours. */
 const SPINNER = ["✳", "✴", "✵", "✶", "✷", "✸", "✹", "✺", "✻", "✼", "✽"];
 
 const DEFAULT_MAX_VISIBLE_TASKS = 10;

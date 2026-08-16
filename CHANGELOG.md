@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-08-16
+
 ### Fixed
 - **The active-task spinner animates at a steady rate.** Its frame advanced inside the widget's redraw, which also runs on every task mutation and tool execution — so the animation raced ahead during bursts of activity and stalled when nothing was happening. The frame now advances only on the widget's own 150 ms timer. (Diagnosed in [#41](https://github.com/tintinweb/pi-tasks/pull/41) — thanks [@xz-dev](https://github.com/xz-dev))
 - **Task paths resolve from the session's workspace, not the directory pi was started in.** The two match in the ordinary terminal flow, but not in a host that serves sessions from elsewhere, or when a session is opened by an explicit path from another project — those wrote every session's tasks into whichever directory pi happened to start in. Task files, `.pi/tasks-config.json` and relative `PI_TASKS` paths now all follow the workspace pi reports for the session, the same one its own file tools use. This also makes the `taskScope` setting take effect on the next session start as its description promises; it previously needed a full restart. If you open sessions by path from outside their project, an existing `.pi/tasks/` in your launch directory will no longer be read — the files are untouched, just no longer the ones in use. ([#45](https://github.com/tintinweb/pi-tasks/pull/45) — thanks [@yeyaowei](https://github.com/yeyaowei))
@@ -207,6 +209,7 @@ Initial release — Claude Code-style task tracking and coordination for pi.
 - **Background process tracker** — output buffering (stdout + stderr), waiter notification, graceful stop with timeout escalation (SIGTERM → 5s → SIGKILL).
 - **78 unit tests** — task store CRUD, dependencies, warnings, file persistence; widget rendering, icons, spinners, token/duration formatting; process tracker lifecycle.
 
+[0.7.3]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.7.3
 [0.7.2]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.7.2
 [0.7.1]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.7.1
 [0.7.0]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.7.0
