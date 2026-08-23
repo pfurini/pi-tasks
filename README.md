@@ -230,6 +230,14 @@ Under either session scope, tasks stay in memory whenever pi is not persisting t
 
 Switching to `session-global` never moves or deletes anything. It changes where *new* session files are created; a session that already has a file in `<workspace>/.pi/tasks/` keeps using it, so resuming that session still finds its tasks and switching back to `session` strands nothing. To empty an existing `.pi/tasks/`, clear those sessions' tasks as usual — the file is removed once its list is empty.
 
+Picking `session-global` from `/tasks` → Settings saves it as a *project* override in `<workspace>/.pi/tasks-config.json`, so that repository still gets a `.pi/` — holding config rather than task data. To apply it everywhere and leave repositories alone, set it once as a [global default](#global-defaults) instead:
+
+```json
+{
+  "taskScope": "session-global"
+}
+```
+
 On new session start, if all persisted tasks are completed they are auto-cleared for a clean slate. On session resume, all tasks (including completed) are shown so the user can review progress. Empty session files are automatically deleted when all tasks are cleared.
 
 ### Auto-clear completed tasks
