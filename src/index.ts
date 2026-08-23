@@ -215,6 +215,17 @@ export default function (pi: ExtensionAPI) {
     return rpcCall<void>("subagents:rpc:stop", { agentId }, 10_000).catch(() => {});
   }
 
+  /** Tell subagents its result has been handed to the model, which suppresses the
+   *  completion notification it would otherwise deliver for the same result — the
+   *  same consumption `get_subagent_result` performs when it returns one.
+   *
+   *  Fire-and-forget rather than an `rpcCall`: the reply carries nothing to act on,
+   *  and the channel is deliberately outside the version handshake so a pi-subagents
+   *  without the handler keeps notifying instead of failing the read. */
+  function consumeSubagentResult(agentId: string): void {
+    pi.events.emit("subagents:rpc:consume", { requestId: randomUUID(), agentId });
+  }
+
   // ── Subagent extension presence & version detection ──
   const PROTOCOL_VERSION = 2;
   let subagentsAvailable = false;
@@ -318,7 +329,7 @@ export default function (pi: ExtensionAPI) {
           store.update(next.id, { owner: agentId, metadata: { ...next.metadata, agentId } });
           widget.setActiveTask(next.id);
         } catch (err: any) {
-          store.update(next.id, { status: "pending", metadata: { ...next.metadata, lastError: err.message } });
+          store.update(next.id, { status: "pending", metadata: { ...next.metadata, result: null, lastError: err.message } });
         }
       }
     }
@@ -341,8 +352,10 @@ export default function (pi: ExtensionAPI) {
       store.update(task.id, { status: "completed", metadata: { ...task.metadata, result: result || task.metadata?.result } });
       autoClear.trackCompletion(task.id, cadence.currentTurn);
     } else {
-      // Actual error — revert to pending
-      store.update(task.id, { status: "pending", metadata: { ...task.metadata, lastError: error || status } });
+      // Actual error — revert to pending. `result: null` drops it (the store deletes
+      // a key set to null): a task back to pending has no current result, and an
+      // earlier run's would otherwise outrank this error everywhere it is read.
+      store.update(task.id, { status: "pending", metadata: { ...task.metadata, result: null, lastError: error || status } });
       autoClear.resetBatchCountdown();
     }
     widget.setActiveTask(task.id, false);
@@ -1008,7 +1021,18 @@ Set up task dependencies:
           // Re-read by resolved ID — `task` predates the wait, and a file-backed
           // store deserializes a fresh object on every load, so it is stale here.
           const updated = store.get(resolvedId) ?? task;
-          return textResult(`Task #${resolvedId} [${updated.status}] — subagent ${task.metadata.agentId}`);
+          const agentId: string = task.metadata.agentId;
+          // Consume only what is actually handed over: the agent has reported back
+          // (it leaves the map when it does) and the task carries its outcome. Short
+          // of both — still running, or an update that never landed — the model is
+          // getting a status, and the notification pi-subagents is holding is the
+          // only thing that will announce the result.
+          if (!agentTaskMap.has(agentId) && updated.status !== "in_progress") consumeSubagentResult(agentId);
+          const output = updated.metadata?.result
+            ?? (updated.metadata?.lastError ? `Error: ${updated.metadata.lastError}` : undefined);
+          return textResult(
+            `Task #${resolvedId} [${updated.status}] — subagent ${agentId}${output ? `\n\n${output}` : ""}`,
+          );
         }
         throw new Error(`No background process for task ${task_id}`);
       }

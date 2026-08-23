@@ -547,6 +547,27 @@ describe("Completion listener", () => {
     expect(result.content[0].text).toContain("earlier output");
   });
 
+  it("drops an earlier result when a retry fails", async () => {
+    // The inverse of the two stopped-agent cases above: a task back to pending has
+    // no current result, so the previous run's must not outlive the failure — it
+    // would otherwise outrank lastError in TaskOutput and reach a cascaded agent's
+    // prompt as if it were this task's output.
+    await mock.executeTool("TaskCreate", {
+      subject: "Retried task",
+      description: "Desc",
+      agentType: "general-purpose",
+    });
+    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    await mock.executeTool("TaskUpdate", { taskId: "1", metadata: { result: "earlier output" } });
+
+    mock.emitEvent("subagents:failed", { id: "agent-1", error: "Out of turns", status: "error" });
+
+    const result = await mock.executeTool("TaskGet", { taskId: "1" });
+    expect(result.content[0].text).toContain("Status: pending");
+    expect(result.content[0].text).toContain("Out of turns");
+    expect(result.content[0].text).not.toContain("earlier output");
+  });
+
   it("ignores events for unknown agent IDs", async () => {
     await mock.executeTool("TaskCreate", {
       subject: "Unrelated",

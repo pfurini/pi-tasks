@@ -172,6 +172,8 @@ Retrieve output from a background task process.
 
 Both task IDs and agent IDs (including partial prefixes) are accepted — agent IDs are resolved via the internal `agentTaskMap`.
 
+For a subagent task that has finished, the tool returns the agent's stored result (or its error) under the status line, so joining a task and reading what it produced is one call. Doing so also [consumes the result](#joining-a-subagent).
+
 ### `TaskStop`
 
 Stop a running background task process. Sends SIGTERM, waits 5 seconds, then SIGKILL. For subagent tasks, sends a stop RPC.
@@ -360,6 +362,20 @@ The returned `id` is stored in an in-memory `agentTaskMap` (agentId → taskId) 
 |-------|---------|--------|
 | `subagents:completed` | `{ id, result? }` | Mark task `completed`, trigger auto-cascade if enabled |
 | `subagents:failed` | `{ id, error?, status }` | Revert task to `pending`, store error in metadata |
+
+### Joining a Subagent
+
+`TaskOutput` waits on those same lifecycle events and then returns the stored result. Handing it to the model *consumes* it: pi-tasks says so over the bus, and pi-subagents drops the completion notification it was holding for that agent, which would otherwise arrive after the model had already answered and cost a turn to dismiss.
+
+```
+pi-tasks                                pi-subagents
+   │                                         │
+   │◀─ subagents:completed ─────────────────│  { id, result }
+   │── subagents:rpc:consume ───────────────▶│  { requestId, agentId }
+   │                                         │
+```
+
+Fire-and-forget, and deliberately outside the version handshake — a [`pi-subagents`](https://github.com/tintinweb/pi-subagents) without the handler keeps notifying, exactly as before. An agent that is still running is never consumed: nothing has been read from it yet, and its notification is the only thing that will announce it.
 
 ### Standalone Mode
 

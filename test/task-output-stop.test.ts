@@ -134,7 +134,7 @@ describe("TaskOutput — agent ID lookups", () => {
       await flush();
       mock.emitEvent("subagents:completed", { id: "agent-1", result: "done" });
 
-      expect((await pending).content[0].text).toBe("Task #1 [completed] — subagent agent-1");
+      expect((await pending).content[0].text).toBe("Task #1 [completed] — subagent agent-1\n\ndone");
     } finally {
       rpc.unsub();
     }
