@@ -8,6 +8,7 @@ Everything here is set in `tasks-config.json`. **Configuration is data, never co
 - [The display settings](#the-display-settings)
 - [Sort presets](#sort-presets)
 - [Writing your own sort order](#writing-your-own-sort-order)
+- [Task glyphs](#task-glyphs)
 - [Recipes](#recipes)
 - [Troubleshooting](#troubleshooting)
 
@@ -43,10 +44,11 @@ that project sorts by `active` (from global) and shows 5 tasks (from project).
 | Setting | Values | Default | Behaviour |
 |---------|--------|---------|-----------|
 | `sortOrder` | a [preset](#sort-presets) or a [sort spec](#writing-your-own-sort-order) | `id` | The order tasks appear in |
-| `collapseCompleted` | `true` / `false` | `false` | Replace completed tasks with a single `✔ N completed` line at the bottom |
+| `collapseCompleted` | `true` / `false` | `false` | Replace completed tasks with a single `✔ N completed` line at the bottom. When off, they stay in the list, dimmed and struck through |
 | `maxVisible` | `5`–`100` | `10` | Cap on task lines (ignored when `showAll` is on) |
 | `showAll` | `true` / `false` | `false` | Show every listed task regardless of `maxVisible` |
 | `hiddenAt` | `bottom` / `top` | `bottom` | Which end the `… and N more` line collapses from |
+| `glyphs` | a [glyph set](#task-glyphs) | `✔` / `◼` / `◻` + star spinner | The glyphs the widget is drawn with |
 
 These compose in a fixed order, which is what makes combinations predictable:
 
@@ -109,6 +111,110 @@ A few things that follow from the design:
 
 In `/tasks` → Settings, a spec shows up as a read-only `custom` value. The menu cannot edit one, and selecting a preset there **replaces** your spec — edit the JSON to get it back.
 
+## Task glyphs
+
+`glyphs` sets the characters the widget is drawn with. Every key is optional, and anything you leave out keeps its default — so this is both a complete example and the built-in set written out in full:
+
+```json
+{
+  "glyphs": {
+    "completed": "✔",
+    "inProgress": "◼",
+    "pending": "◻",
+    "spinner": ["✳", "✴", "✵", "✶", "✷", "✸", "✹", "✺", "✻", "✼", "✽"],
+    "completedSummary": "✔",
+    "header": "●",
+    "overflow": "…",
+    "blocked": "›",
+    "inputTokens": "↑",
+    "outputTokens": "↓",
+    "statsSeparator": "·",
+    "trailingEllipsis": "…",
+    "truncation": "..."
+  }
+}
+```
+
+Pasting that whole block changes nothing — it is there to copy and cut down to the keys you care about. `completedSummary` is the only entry that is not a fixed literal: left unset it follows `completed`, whatever you set that to.
+
+Here is every glyph on screen at once, at its default. This is real widget output, with `maxVisible: 5`:
+
+```
+● 8 tasks (1 done, 2 in progress, 5 open)
+  ✔ #1 Write the parser
+  ✷ #2 Running the integration suite (agent ab12c)… (2m 49s · ↑ 4.1k ↓ 850)
+  ◻ #3 Ship it › blocked by #2
+  ◼ #4 Review the PR
+  ◻ #5 Backlog item 5
+    … and 3 more
+```
+
+| On that screen | Glyph |
+|---|---|
+| `●` opening the first line | `header` |
+| `✔` on #1 | `completed` |
+| `✷` on #2 — one frame of the animation | `spinner` |
+| `…` closing #2's text | `trailingEllipsis` |
+| `·` between `2m 49s` and the counts | `statsSeparator` |
+| `↑` and `↓` before the counts | `inputTokens`, `outputTokens` |
+| `◻` on #3 and #5 | `pending` |
+| `›` before `blocked by #2` | `blocked` |
+| `◼` on #4 | `inProgress` |
+| `…` opening the last line | `overflow` |
+
+Turn on `collapseCompleted` and #1 leaves the list for a count line of its own, marked with `completedSummary`:
+
+```
+● 8 tasks (1 done, 2 in progress, 5 open)
+  ✷ #2 Running the integration suite (agent ab12c)… (2m 49s · ↑ 4.1k ↓ 850)
+  ◻ #3 Ship it › blocked by #2
+  ◼ #4 Review the PR
+  ◻ #5 Backlog item 5
+  ◻ #6 Backlog item 6
+    … and 2 more
+  ✔ 1 completed
+```
+
+The thirteenth, `truncation`, only shows up when a line is too wide for the terminal.
+
+### The task glyphs
+
+| Key | Default | Marks |
+|-----|---------|-------|
+| `completed` | `✔` | a finished task |
+| `inProgress` | `◼` | a task in progress, but not being executed right now |
+| `pending` | `◻` | a task not started yet |
+| `spinner` | `✳ ✴ ✵ ✶ ✷ ✸ ✹ ✺ ✻ ✼ ✽` | the task an agent is actively working on, one frame per 150 ms |
+| `completedSummary` | follows `completed` | the `N completed` line `collapseCompleted` puts in place of the rows |
+
+`completed`, `inProgress` and `pending` are also used by `/tasks` → View all tasks. Everything else on this page is the widget only.
+
+### The furniture
+
+| Key | Default | Marks |
+|-----|---------|-------|
+| `header` | `●` | the widget's summary line |
+| `overflow` | `…` | the `and N more` line standing in for rows the visible limit hid |
+| `blocked` | `›` | introduces the `blocked by #1, #2` suffix |
+| `inputTokens` | `↑` | precedes the input token count |
+| `outputTokens` | `↓` | precedes the output token count |
+| `statsSeparator` | `·` | sits between elapsed time and token counts |
+| `trailingEllipsis` | `…` | closes the active row's text, marking the action as still running |
+| `truncation` | `...` | marks a line clipped at the terminal's right edge |
+
+### Things worth knowing
+
+- **A glyph is a string, not a character.** `"[x]"`, `"⣾⣾"` and emoji with variation selectors all work, in the spinner and everywhere else. Control characters and bidirectional overrides are the exception — they would break the line or drive the terminal itself, so they fall back like any other bad value.
+- **Keep every spinner frame the same display width.** Frames are not padded, so a sequence of uneven width shifts the rest of the line back and forth as it animates. The same goes for a status glyph against the spinner: give them equal width, or rows will jump when a task starts executing.
+- **Nerd Font glyphs usually want a trailing space**, e.g. `"  "`, because terminals report them as one column wide while drawing them wider. Pad all four task glyphs the same way or they won't line up.
+- **Glyphs merge one by one, not as a block.** A global `{ "glyphs": { "pending": "[ ]" } }` and a project `{ "glyphs": { "completed": "[x]" } }` give you both.
+- **`completedSummary` follows `completed` unless you set it.** Change `completed` alone and the collapsed line follows along; set `completedSummary` to break them apart.
+- **`truncation` is three ASCII dots, not `…`.** That is the terminal-clipping marker the widget has always used; set it to `"…"` if you want the widget consistent with its own `overflow` line.
+- **Colors are not configurable.** Your glyph is drawn in its slot's existing color: green for completed, accent for in-progress, the spinner and the header, dim for the furniture, plain for pending.
+- **A single space is how you hide one.** `" "` is a valid glyph and renders as spacing; an empty string is treated as unset and falls back to the default.
+- **Bad values fall back quietly**, one glyph at a time — see [Troubleshooting](#troubleshooting).
+- **Glyphs are config-file only.** `/tasks` → Settings cycles between fixed values, which free-form glyphs aren't.
+
 ## Recipes
 
 **Active work first, finished work out of the way.** The most common ask:
@@ -149,6 +255,21 @@ In `/tasks` → Settings, a spec shows up as a read-only `custom` value. The men
 { "sortOrder": [{ "field": "id", "direction": "desc" }] }
 ```
 
+**An all-ASCII widget**, for a terminal or font that renders the default [glyphs](#task-glyphs) badly. Only the keys you name change:
+
+```json
+{
+  "glyphs": {
+    "completed": "[x]",
+    "inProgress": "[>]",
+    "pending": "[ ]",
+    "spinner": ["|", "/", "-", "\\"],
+    "blocked": "<-",
+    "header": "*"
+  }
+}
+```
+
 ## Troubleshooting
 
 **The widget ignores my sort order.** A spec that fails validation silently falls back to `id` order. Check that `field` is one of `id` / `status` / `updatedAt`, that `direction` is `asc` or `desc` (not `ascending`), that every entry in `rank` is `pending` / `in_progress` / `completed`, and that `sortOrder` is a JSON *array* of key objects rather than a single object. An empty array falls back too.
@@ -158,6 +279,8 @@ In `/tasks` → Settings, a spec shows up as a read-only `custom` value. The men
 **Two tasks are in the "wrong" order.** They probably tie on every key in your spec. Add `{ "field": "id" }` as the last key.
 
 **The `/tasks` menu shows `custom` and I can't change it.** That's a sort spec in your config. Edit `tasks-config.json` to change it, or pick a preset in the menu to discard it.
+
+**My glyphs are ignored.** Every glyph except `spinner` must be a *non-empty string*; anything else (a number, `null`, `""`, or a string carrying a control character or a bidirectional override) falls back to that one default and leaves the others alone. `spinner` must be a non-empty *array* of non-empty strings — a bare string like `"✳✴"`, an empty array, or one bad frame drops the whole sequence back to the default. Remember that `glyphs` merges one by one, so a glyph you didn't set in the project file may still be coming from your global one.
 
 **Settings I change in one project show up in another.** Check your global `~/.pi/agent/tasks-config.json` — the settings menu only ever writes the project file, so a value that follows you around is coming from global.
 

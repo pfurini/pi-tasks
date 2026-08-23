@@ -1,14 +1,18 @@
 /**
- * task-widget.ts — Persistent widget showing task list with status icons and progress.
+ * task-widget.ts — Persistent widget showing task list with status glyphs and progress.
  *
  * Display style matches Claude Code's task list:
  *   ✔ completed tasks (strikethrough + dim)
  *   ◼ in_progress tasks
  *   ◻ pending tasks
  *   ✳/✽ actively executing task (star spinner with activeForm text)
+ *
+ * Every glyph on screen is a default that `glyphs` in tasks-config.json can
+ * replace — see task-glyphs.ts.
  */
 
 import { truncateToWidth } from "@earendil-works/pi-tui";
+import { resolveTaskGlyphs } from "../task-glyphs.js";
 import type { TaskStore } from "../task-store.js";
 import type { TasksConfig } from "../tasks-config.js";
 
@@ -42,11 +46,6 @@ export type UICtx = {
     options?: { placement?: "aboveEditor" | "belowEditor" },
   ): void;
 };
-
-/** Star spinner frames for the animated active-task indicator. Claude Code's own
- *  spinner is a shorter mirrored sequence (`· ✢ ✳ ✶ ✻ ✽` and its reverse, with a
- *  ghostty variant); this walks the dingbat block instead. Deliberately ours. */
-const SPINNER = ["✳", "✴", "✵", "✶", "✷", "✸", "✹", "✺", "✻", "✼", "✽"];
 
 const DEFAULT_MAX_VISIBLE_TASKS = 10;
 
@@ -155,9 +154,12 @@ export class TaskWidget {
   /** Build widget lines from current live state. */
   private buildWidgetLines(tui: any, theme: Theme): string[] {
     const sortOrder = this.config.sortOrder ?? "id";
+    // Resolved per render, not cached: the extension swaps this config object's
+    // contents when the host moves to a session in another workspace.
+    const glyphs = resolveTaskGlyphs(this.config.glyphs);
     const tasks = this.store.list(sortOrder);
     const w = tui.terminal.columns;
-    const truncate = (line: string) => truncateToWidth(line, w);
+    const truncate = (line: string) => truncateToWidth(line, w, glyphs.truncation);
 
     if (tasks.length === 0) return [];
 
@@ -171,8 +173,8 @@ export class TaskWidget {
     if (pending.length > 0) parts.push(`${pending.length} open`);
     const statusText = `${tasks.length} tasks (${parts.join(", ")})`;
 
-    const spinnerChar = SPINNER[this.widgetFrame % SPINNER.length];
-    const lines: string[] = [truncate(theme.fg("accent", "●") + " " + theme.fg("accent", statusText))];
+    const spinnerFrame = glyphs.spinner[this.widgetFrame % glyphs.spinner.length];
+    const lines: string[] = [truncate(theme.fg("accent", glyphs.header) + " " + theme.fg("accent", statusText))];
 
     // Collapsing only decides what goes in the list; the visible-limit logic below
     // then runs unchanged over whatever remains.
@@ -187,7 +189,7 @@ export class TaskWidget {
 
     const hiddenCount = listed.length - visible.length;
     const overflowLine = hiddenCount > 0
-      ? truncate(theme.fg("dim", `    … and ${hiddenCount} more`))
+      ? truncate(theme.fg("dim", `    ${glyphs.overflow} and ${hiddenCount} more`))
       : undefined;
 
     if (overflowLine && hiddenAt === "top") {
@@ -197,15 +199,15 @@ export class TaskWidget {
       const task = visible[i];
       const isActive = this.activeTaskIds.has(task.id) && task.status === "in_progress";
 
-      let icon: string;
+      let statusGlyph: string;
       if (isActive) {
-        icon = theme.fg("accent", spinnerChar);
+        statusGlyph = theme.fg("accent", spinnerFrame);
       } else if (task.status === "completed") {
-        icon = theme.fg("success", "✔");
+        statusGlyph = theme.fg("success", glyphs.completed);
       } else if (task.status === "in_progress") {
-        icon = theme.fg("accent", "◼");
+        statusGlyph = theme.fg("accent", glyphs.inProgress);
       } else {
-        icon = "◻";
+        statusGlyph = glyphs.pending;
       }
 
       let suffix = "";
@@ -215,7 +217,7 @@ export class TaskWidget {
           return blocker && blocker.status !== "completed";
         });
         if (openBlockers.length > 0) {
-          suffix = theme.fg("dim", ` › blocked by ${openBlockers.map(id => "#" + id).join(", ")}`);
+          suffix = theme.fg("dim", ` ${glyphs.blocked} blocked by ${openBlockers.map(id => "#" + id).join(", ")}`);
         }
       }
 
@@ -229,20 +231,22 @@ export class TaskWidget {
         if (m) {
           const elapsed = formatDuration(Date.now() - m.startedAt);
           const tokenParts: string[] = [];
-          if (m.inputTokens > 0) tokenParts.push(`↑ ${formatTokens(m.inputTokens)}`);
-          if (m.outputTokens > 0) tokenParts.push(`↓ ${formatTokens(m.outputTokens)}`);
+          if (m.inputTokens > 0) tokenParts.push(`${glyphs.inputTokens} ${formatTokens(m.inputTokens)}`);
+          if (m.outputTokens > 0) tokenParts.push(`${glyphs.outputTokens} ${formatTokens(m.outputTokens)}`);
           stats = tokenParts.length > 0
-            ? ` ${theme.fg("dim", `(${elapsed} · ${tokenParts.join(" ")})`)}`
+            ? ` ${theme.fg("dim", `(${elapsed} ${glyphs.statsSeparator} ${tokenParts.join(" ")})`)}`
             : ` ${theme.fg("dim", `(${elapsed})`)}`;
         }
-        text = `  ${icon} ${theme.fg("dim", "#" + task.id)} ${theme.fg("accent", form + agentLabel + "…")}${stats}`;
+        text = `  ${statusGlyph} ${theme.fg("dim", "#" + task.id)} ${
+          theme.fg("accent", form + agentLabel + glyphs.trailingEllipsis)
+        }${stats}`;
       } else if (task.status === "completed") {
-        text = `  ${icon} ${theme.fg("dim", theme.strikethrough("#" + task.id + " " + task.subject))}`;
+        text = `  ${statusGlyph} ${theme.fg("dim", theme.strikethrough("#" + task.id + " " + task.subject))}`;
       } else {
         const agentSuffix = task.status === "in_progress" && task.metadata?.agentId
           ? theme.fg("dim", ` (agent ${task.metadata.agentId.slice(0, 5)})`)
           : "";
-        text = `  ${icon} ${theme.fg("dim", "#" + task.id)} ${task.subject}${agentSuffix}`;
+        text = `  ${statusGlyph} ${theme.fg("dim", "#" + task.id)} ${task.subject}${agentSuffix}`;
       }
 
       lines.push(truncate(text + suffix));
@@ -252,7 +256,7 @@ export class TaskWidget {
       lines.push(overflowLine);
     }
     if (collapseCompleted && completed.length > 0) {
-      lines.push(truncate(`  ${theme.fg("success", "✔")} ${theme.fg("dim", `${completed.length} completed`)}`));
+      lines.push(truncate(`  ${theme.fg("success", glyphs.completedSummary)} ${theme.fg("dim", `${completed.length} completed`)}`));
     }
 
     return lines;
