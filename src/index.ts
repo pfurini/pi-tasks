@@ -210,7 +210,7 @@ export default function (pi: ExtensionAPI) {
   }
 
   // ── Subagent extension presence & version detection ──
-  const PROTOCOL_VERSION = 2;
+  const PROTOCOL_VERSION = 3;
   let subagentsAvailable = false;
   let pendingWarning: string | undefined;
 

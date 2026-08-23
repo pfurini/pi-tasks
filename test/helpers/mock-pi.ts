@@ -129,7 +129,7 @@ export function installSubagentsMock(pi: { events: MockEventBus }, opts?: { spaw
   // Respond to ping — reply on scoped channel
   const unsubPing = pi.events.on("subagents:rpc:ping", (data: unknown) => {
     const { requestId } = data as { requestId: string };
-    pi.events.emit(`subagents:rpc:ping:reply:${requestId}`, { success: true, data: { version: opts?.version ?? 2 } });
+    pi.events.emit(`subagents:rpc:ping:reply:${requestId}`, { success: true, data: { version: opts?.version ?? 3 } });
   });
 
   // Respond to spawn — reply on scoped channel

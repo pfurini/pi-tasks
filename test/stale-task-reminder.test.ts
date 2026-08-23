@@ -78,7 +78,7 @@ function mockPi() {
 function installPingResponder(pi: ReturnType<typeof mockPi>["pi"]) {
   return pi.events.on("subagents:rpc:ping", (data: unknown) => {
     const { requestId } = data as { requestId: string };
-    pi.events.emit(`subagents:rpc:ping:reply:${requestId}`, { success: true, data: { version: 2 } });
+    pi.events.emit(`subagents:rpc:ping:reply:${requestId}`, { success: true, data: { version: 3 } });
   });
 }
 

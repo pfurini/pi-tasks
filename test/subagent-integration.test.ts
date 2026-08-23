@@ -754,7 +754,7 @@ describe("RPC protocol correctness", () => {
   it("spawn RPC rejects on timeout when no responder exists", async () => {
     const mock = mockPi();
     // Install ping handler (for version check) but no spawn handler
-    installVersionedMock(mock.pi, 2);
+    installVersionedMock(mock.pi, 3);
     initExtension(mock.pi as any);
 
     await mock.executeTool("TaskCreate", {
@@ -907,7 +907,7 @@ function installVersionedMock(pi: { events: MockEventBus }, version?: number) {
 describe("Protocol version mismatch", () => {
   it("matching version — no warning", async () => {
     const mock = mockPi();
-    installVersionedMock(mock.pi, 2);
+    installVersionedMock(mock.pi, 3);
     initExtension(mock.pi as any);
 
     // No warning on before_agent_start
@@ -929,9 +929,9 @@ describe("Protocol version mismatch", () => {
     );
   });
 
-  it("handler ahead (v3) — warns about pi-tasks", async () => {
+  it("handler ahead (v4) — warns about pi-tasks", async () => {
     const mock = mockPi();
-    installVersionedMock(mock.pi, 3);
+    installVersionedMock(mock.pi, 4);
     initExtension(mock.pi as any);
 
     const ctx = mockCtx();
@@ -942,9 +942,9 @@ describe("Protocol version mismatch", () => {
     );
   });
 
-  it("handler behind (v1) — warns about pi-subagents", async () => {
+  it("handler behind (v2) — warns about pi-subagents", async () => {
     const mock = mockPi();
-    installVersionedMock(mock.pi, 1);
+    installVersionedMock(mock.pi, 2);
     initExtension(mock.pi as any);
 
     const ctx = mockCtx();
