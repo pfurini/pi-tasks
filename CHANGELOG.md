@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-24
+
 ### Added
 - **`taskScope: "session-global"` — per-session tasks kept outside the workspace.** Session scope writes `.pi/tasks/tasks-<sessionId>.json` into the workspace, so every repository pi runs in picks up an untracked directory holding a file keyed by a session ID: data of no use to anyone else cloning it, and one more `.gitignore` rule per project. The new scope keeps the same per-session isolation but stores the file at `<agent-dir>/tasks/sessions/<project-key>/tasks-<sessionId>.json` (`~/.pi/agent/tasks/…` by default, following pi's configured agent path like every other piece of user-level state), where `<project-key>` encodes the workspace path the way pi encodes it for its own session logs (`--Users-me-work-repo--`), so a project's tasks sit under the same name as its transcripts and same-ID sessions in different workspaces stay apart.
 
@@ -237,6 +239,7 @@ Initial release — Claude Code-style task tracking and coordination for pi.
 - **Background process tracker** — output buffering (stdout + stderr), waiter notification, graceful stop with timeout escalation (SIGTERM → 5s → SIGKILL).
 - **78 unit tests** — task store CRUD, dependencies, warnings, file persistence; widget rendering, icons, spinners, token/duration formatting; process tracker lifecycle.
 
+[0.9.0]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.9.0
 [0.8.0]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.8.0
 [0.7.3]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.7.3
 [0.7.2]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.7.2
