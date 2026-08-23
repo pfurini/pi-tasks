@@ -374,7 +374,10 @@ src/
 ├── task-store.ts       # File-backed store with CRUD, dependencies, locking
 ├── auto-clear.ts       # Turn-based auto-clearing of completed tasks (AutoClearManager)
 ├── tasks-config.ts     # Global defaults and project override persistence
+├── task-paths.ts       # Where session task files live, per taskScope
 ├── task-glyphs.ts      # Glyph defaults and config validation
+├── task-sort.ts        # Widget ordering: sort presets and sort specs
+├── reminder-cadence.ts # Pure cadence logic for system-reminder injection
 ├── process-tracker.ts  # Background process output buffering and stop
 └── ui/
     ├── task-widget.ts  # Persistent widget with status glyphs and spinner
