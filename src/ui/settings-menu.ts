@@ -39,11 +39,12 @@ export async function openSettingsMenu(
         label: "Task storage",
         description:
           "memory: tasks live only in memory, lost when session ends. " +
-          "session: persisted per session (tasks-<sessionId>.json), survives resume. " +
+          "session: persisted per session in the workspace (.pi/tasks/tasks-<sessionId>.json), survives resume. " +
+          "session-global: same, but kept outside the workspace under pi's agent directory. " +
           "project: shared across all sessions (tasks.json). " +
           "Takes effect on next session start.",
         currentValue: cfg.taskScope ?? "session",
-        values: ["memory", "session", "project"],
+        values: ["memory", "session", "session-global", "project"],
       },
       {
         id: "autoCascade",
@@ -58,7 +59,7 @@ export async function openSettingsMenu(
         id: "collapseCompleted",
         label: "Collapse completed tasks",
         description:
-          "When ON, completed tasks are replaced by a single '✔ N completed' line and the " +
+          "When ON, completed tasks are replaced by a single 'N completed' line and the " +
           "visible limit applies only to the tasks left. When OFF, they are listed individually.",
         currentValue: (cfg.collapseCompleted ?? false) ? "on" : "off",
         values: ["on", "off"],
@@ -125,7 +126,7 @@ export async function openSettingsMenu(
           saveTasksConfig(cfg, cwd);
         }
         if (id === "taskScope") {
-          cfg.taskScope = newValue as "memory" | "session" | "project";
+          cfg.taskScope = newValue as TasksConfig["taskScope"];
           saveTasksConfig(cfg, cwd);
         }
         if (id === "autoClearCompleted") {

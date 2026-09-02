@@ -108,7 +108,7 @@ describe("reattaching subagents after reload", () => {
     await flush();
     mock.emitEvent("subagents:completed", { id: "agent-1", result: "done" });
 
-    expect((await pending).content[0].text).toBe("Task #1 [completed] — subagent agent-1");
+    expect((await pending).content[0].text).toBe("Task #1 [completed] — subagent agent-1\n\ndone");
   });
 
   it("resolves an agent ID to its task after a reload", async () => {

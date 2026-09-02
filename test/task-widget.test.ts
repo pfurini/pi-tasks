@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskStore } from "../src/task-store.js";
+import type { TasksConfig } from "../src/tasks-config.js";
 import { TaskWidget, type Theme, type UICtx } from "../src/ui/task-widget.js";
 
 /** Create a mock theme that returns raw text (no ANSI escapes). */
@@ -34,11 +35,11 @@ function mockUICtx() {
 }
 
 /** Render the widget and return its lines. */
-function renderWidget(state: ReturnType<typeof mockUICtx>["state"]): string[] {
+function renderWidget(state: ReturnType<typeof mockUICtx>["state"], columns = 200): string[] {
   const entry = state.widgets.get("tasks");
   if (!entry?.content) return [];
   const theme = mockTheme();
-  const tui = { terminal: { columns: 200 }, requestRender() {} };
+  const tui = { terminal: { columns }, requestRender() {} };
   const result = entry.content(tui, theme);
   return result.render();
 }
@@ -673,6 +674,168 @@ describe("formatDuration (via widget rendering)", () => {
     const lines = renderWidget(ui.state);
     expect(lines[1]).toContain("↑ 2k");    // 2000 → "2k" (not "2.0k")
     expect(lines[1]).toContain("↓ 4.1k");  // 4100 → "4.1k"
+  });
+});
+
+describe("configurable glyphs", () => {
+  let store: TaskStore;
+  let ui: ReturnType<typeof mockUICtx>;
+  let widget: TaskWidget;
+
+  /** Build a widget over the given glyph config and seed one task per status. */
+  function seed(glyphs: TasksConfig["glyphs"], config: TasksConfig = {}) {
+    store = new TaskStore();
+    ui = mockUICtx();
+    widget = new TaskWidget(store, { ...config, glyphs });
+    widget.setUICtx(ui.ctx);
+    store.create("Done task", "Desc");
+    store.create("Open task", "Desc");
+    store.create("Running task", "Desc", "Running");
+    store.update("1", { status: "completed" });
+    store.update("3", { status: "in_progress" });
+    widget.update();
+    return renderWidget(ui.state);
+  }
+
+  /** Render one over-long task at a 20-column terminal, ANSI stripped — truncateToWidth
+   *  wraps its marker in reset codes, and the mock theme adds none of its own. */
+  function clippedAt20(glyphs: TasksConfig["glyphs"]) {
+    store = new TaskStore();
+    ui = mockUICtx();
+    widget = new TaskWidget(store, { glyphs });
+    widget.setUICtx(ui.ctx);
+    store.create("A subject far too long for this terminal", "Desc");
+    widget.update();
+
+    return renderWidget(ui.state, 20)[1].replace(/\u001b\[[0-9;]*m/g, "");
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    widget.dispose();
+    vi.useRealTimers();
+  });
+
+  it("renders the default glyphs when none are configured", () => {
+    const lines = seed(undefined);
+
+    expect(lines[0]).toContain("●");
+    expect(lines[1]).toContain("✔");
+    expect(lines[2]).toContain("◻");
+    expect(lines[3]).toContain("◼");
+  });
+
+  it("renders configured status glyphs", () => {
+    const lines = seed({ completed: "[x]", pending: "[ ]", inProgress: "[>]" });
+
+    expect(lines[1]).toContain("[x] ~~#1 Done task~~");
+    expect(lines[2]).toContain("[ ] #2 Open task");
+    expect(lines[3]).toContain("[>] #3 Running task");
+  });
+
+  it("renders a configured header glyph", () => {
+    expect(seed({ header: "▸" })[0]).toContain("▸ 3 tasks");
+  });
+
+  it("follows the completed glyph on the collapsed count line", () => {
+    const lines = seed({ completed: "[x]" }, { collapseCompleted: true });
+
+    expect(lines[lines.length - 1]).toContain("[x] 1 completed");
+  });
+
+  it("prefers an explicit completedSummary on the collapsed count line", () => {
+    const lines = seed({ completed: "[x]", completedSummary: "[=]" }, { collapseCompleted: true });
+
+    expect(lines[lines.length - 1]).toContain("[=] 1 completed");
+    expect(lines.some(l => l.includes("[x]"))).toBe(false);
+  });
+
+  it("cycles the configured spinner frames on the active task", () => {
+    seed({ spinner: ["<", "^", ">", "v"] });
+    widget.setActiveTask("3");
+
+    const frames: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      frames.push(renderWidget(ui.state)[3].trim().split(" ")[0]);
+      vi.advanceTimersByTime(150);
+    }
+
+    expect(frames).toEqual(["<", "^", ">", "v", "<"]);
+  });
+
+  it("renders a multi-glyph spinner frame whole", () => {
+    seed({ spinner: ["⣾⣾", "⣽⣽"] });
+    widget.setActiveTask("3");
+
+    expect(renderWidget(ui.state)[3]).toContain("⣾⣾ #3");
+  });
+
+  it("renders a configured overflow glyph", () => {
+    const lines = seed({ overflow: "~" }, { maxVisible: 2 });
+
+    expect(lines[lines.length - 1]).toContain("~ and 1 more");
+  });
+
+  it("renders a configured blocked glyph", () => {
+    seed({ blocked: "->" });
+    store.update("2", { addBlockedBy: ["3"] });
+    widget.update();
+
+    const blockedLine = renderWidget(ui.state).find(l => l.includes("Open task"));
+    expect(blockedLine).toContain("-> blocked by #3");
+  });
+
+  it("renders configured token, separator and trailing glyphs on the active row", () => {
+    seed({ inputTokens: "in", outputTokens: "out", statsSeparator: "|", trailingEllipsis: "~~" });
+    widget.setActiveTask("3");
+    widget.addTokenUsage(1500, 800);
+    vi.advanceTimersByTime(5_000);
+    widget.update();
+
+    const activeLine = renderWidget(ui.state)[3];
+    expect(activeLine).toContain("Running~~");
+    expect(activeLine).toContain("(5s | in 1.5k out 800)");
+  });
+
+  // Asserted by shape, not by exact string: where pi-tui puts the cut is its
+  // arithmetic, not the widget's contract.
+  it("clips over-wide lines with the configured truncation glyph", () => {
+    const line = clippedAt20({ truncation: "…" });
+
+    expect(line.endsWith("…")).toBe(true);
+    expect(line.length).toBeLessThanOrEqual(20);
+    expect(line).not.toContain("terminal");
+  });
+
+  it("clips with three ASCII dots by default", () => {
+    const line = clippedAt20(undefined);
+
+    expect(line.endsWith("...")).toBe(true);
+    expect(line).not.toContain("…");
+  });
+
+  it("falls back to the defaults for unusable glyph values", () => {
+    const glyphs = { completed: "", pending: 3, header: null, spinner: [] } as unknown as TasksConfig["glyphs"];
+    const lines = seed(glyphs);
+    widget.setActiveTask("3");
+
+    expect(lines[0]).toContain("●");
+    expect(lines[1]).toContain("✔");
+    expect(lines[2]).toContain("◻");
+    expect(renderWidget(ui.state)[3].trim().split(" ")[0]).toBe("✳");
+  });
+
+  it("never lets a glyph carry a control character into a rendered line", () => {
+    // The threat model is a tasks-config.json that arrived with a cloned repository:
+    // the newline would split a widget line in two, the OSC sequence would retitle
+    // the terminal. Both fall back, like any other unusable glyph.
+    const lines = seed({ pending: "X\n\u001b]0;pwned\u0007" });
+
+    expect(lines[2]).toContain("◻ #2 Open task");
+    expect(lines.join("")).not.toMatch(/\p{Cc}/u);
   });
 });
 

@@ -137,4 +137,49 @@ describe("tasks config", () => {
     expect(existsSync(projectConfigPath)).toBe(true);
     expect(JSON.parse(readFileSync(projectConfigPath, "utf-8"))).toEqual({});
   });
+
+  it("merges glyphs one by one rather than replacing the whole set", () => {
+    writeJson(globalConfigPath, { glyphs: { pending: "[ ]", spinner: ["|", "/"] } });
+    writeJson(projectConfigPath, { glyphs: { completed: "[x]", spinner: ["-", "\\"] } });
+
+    expect(loadTasksConfig(cwd, agentDir)).toEqual({
+      glyphs: { pending: "[ ]", completed: "[x]", spinner: ["-", "\\"] },
+    });
+  });
+
+  it("leaves glyphs absent when neither config sets any", () => {
+    writeJson(globalConfigPath, { autoCascade: true });
+
+    expect(loadTasksConfig(cwd, agentDir)).toEqual({ autoCascade: true });
+  });
+
+  it("does not copy global glyphs into the project override", () => {
+    writeJson(globalConfigPath, { glyphs: { pending: "[ ]", completed: "[x]" } });
+    const config = loadTasksConfig(cwd, agentDir);
+
+    config.maxVisible = 5;
+    saveTasksConfig(config, cwd, agentDir);
+
+    expect(JSON.parse(readFileSync(projectConfigPath, "utf-8"))).toEqual({ maxVisible: 5 });
+  });
+
+  it("writes only the glyphs that differ from the global ones", () => {
+    writeJson(globalConfigPath, { glyphs: { pending: "[ ]", completed: "[x]" } });
+
+    saveTasksConfig({ glyphs: { pending: "[ ]", completed: "done", inProgress: "[>]" } }, cwd, agentDir);
+
+    expect(JSON.parse(readFileSync(projectConfigPath, "utf-8"))).toEqual({
+      glyphs: { completed: "done", inProgress: "[>]" },
+    });
+  });
+
+  it("preserves a project glyph override across save and reload cycles", () => {
+    writeJson(globalConfigPath, { glyphs: { pending: "[ ]" } });
+    writeJson(projectConfigPath, { glyphs: { completed: "[x]" } });
+
+    saveTasksConfig(loadTasksConfig(cwd, agentDir), cwd, agentDir);
+
+    expect(JSON.parse(readFileSync(projectConfigPath, "utf-8"))).toEqual({ glyphs: { completed: "[x]" } });
+    expect(loadTasksConfig(cwd, agentDir)).toEqual({ glyphs: { pending: "[ ]", completed: "[x]" } });
+  });
 });

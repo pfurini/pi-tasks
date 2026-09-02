@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-24
+
+### Added
+- **`taskScope: "session-global"` — per-session tasks kept outside the workspace.** Session scope writes `.pi/tasks/tasks-<sessionId>.json` into the workspace, so every repository pi runs in picks up an untracked directory holding a file keyed by a session ID: data of no use to anyone else cloning it, and one more `.gitignore` rule per project. The new scope keeps the same per-session isolation but stores the file at `<agent-dir>/tasks/sessions/<project-key>/tasks-<sessionId>.json` (`~/.pi/agent/tasks/…` by default, following pi's configured agent path like every other piece of user-level state), where `<project-key>` encodes the workspace path the way pi encodes it for its own session logs (`--Users-me-work-repo--`), so a project's tasks sit under the same name as its transcripts and same-ID sessions in different workspaces stay apart.
+
+  **`session` remains the default and is unchanged** — upgrading moves nothing. Opting in is non-destructive too: it only changes where *new* session files are created, and a session that already has a file in `<workspace>/.pi/tasks/` keeps using it, so switching back strands nothing. ([#61](https://github.com/tintinweb/pi-tasks/pull/61) — thanks [@kunaaal13](https://github.com/kunaaal13) — for [#53](https://github.com/tintinweb/pi-tasks/issues/53) — thanks [@rfgamaral](https://github.com/rfgamaral) — and [#57](https://github.com/tintinweb/pi-tasks/issues/57))
+
+- **Every glyph the widget draws is configurable.** A `glyphs` map in `tasks-config.json` at either scope replaces the status marks (`✔` / `◼` / `◻`), the active-task spinner frames, and the widget's furniture — header bullet, overflow and clipping markers, blocked-by marker, token arrows, stats separator, active-row ellipsis, and the glyph on the collapsed `N completed` line. Enough to run the widget in pure ASCII on a terminal without a Nerd Font, or in a set of your own. Every key is optional and falls back on its own, so a partial or malformed map still leaves every task marked, and glyphs merge per key across the global and project files rather than as a block. Glyphs are the first config value to reach the terminal as free text, so control characters and bidi overrides are rejected per glyph — a `.pi/tasks-config.json` arriving with a cloned repository cannot retitle your window or break a widget line in two. Config file only, not in `/tasks` → Settings. See [CUSTOMIZING.md](CUSTOMIZING.md#task-glyphs). ([#60](https://github.com/tintinweb/pi-tasks/pull/60) — thanks [@ningw42](https://github.com/ningw42))
+
+### Changed
+- **`TaskCreate` is told how to create a batch in one turn.** Its description now says that several tasks are created by issuing one `TaskCreate` call per task in a single response — pi runs independent tool calls in parallel — rather than leaving the model to serialize them across turns. No schema change: `subject` and `description` stay required, and there is no batch parameter to get wrong. ([#58](https://github.com/tintinweb/pi-tasks/pull/58) — thanks [@elecnix](https://github.com/elecnix))
+
+### Fixed
+- **`TaskOutput` returns a finished subagent's result, and dismisses its completion notification.** It reported only `Task #N [status] — subagent <id>`, so a model that had just blocked on the join still had to call `TaskGet` to read what the agent produced — and pi-subagents, never told the result had been read, delivered its completion notification anyway, after the parent had already answered, costing another turn. The result (or the error) now comes back under the status line, and handing it over consumes it through the new `subagents:rpc:consume` RPC. The suppression half needs a pi-subagents that answers that channel; one that does not keeps notifying rather than failing, and an agent that is still running is never consumed — its notification is the only thing that will announce it. ([#62](https://github.com/tintinweb/pi-tasks/issues/62) — thanks [@felipe3dfx](https://github.com/felipe3dfx))
+- **A failed subagent run no longer leaves the previous run's result behind.** The failure listener recorded `lastError` and reverted the task to `pending` but kept `metadata.result` from an earlier successful run, so a retry that failed carried both — and every reader had to guess which was current. A task back to `pending` now has no result, which is what `TaskOutput`, `TaskGet` and a cascaded agent's injected prerequisite output all already assumed. An intentional stop still keeps its partial result: that task is completed, not retried.
+- **The test suite no longer reads or writes the real `~/.pi/`.** Shared named lists and the global `tasks-config.json` both resolve from the home directory, so the suite left files in the home directory of whoever ran it and picked up their global settings. `HOME` now points at a scratch directory for the duration of the run, and `PI_CODING_AGENT_DIR` is cleared — `getAgentDir()` consults it first, so redirecting the home directory alone would not have contained a contributor who has it set.
+- **`vitest.config.ts` is no longer published to npm.** It refers to `test/`, which `.npmignore` excludes, so the tarball carried a config file pointing at files that were not there.
+
 ## [0.8.0] - 2026-08-16
 
 ### Added
@@ -221,6 +239,7 @@ Initial release — Claude Code-style task tracking and coordination for pi.
 - **Background process tracker** — output buffering (stdout + stderr), waiter notification, graceful stop with timeout escalation (SIGTERM → 5s → SIGKILL).
 - **78 unit tests** — task store CRUD, dependencies, warnings, file persistence; widget rendering, icons, spinners, token/duration formatting; process tracker lifecycle.
 
+[0.9.0]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.9.0
 [0.8.0]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.8.0
 [0.7.3]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.7.3
 [0.7.2]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.7.2
