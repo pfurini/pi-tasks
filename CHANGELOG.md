@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`TaskExecute` now forwards a `thinking` level to spawned agents.** Its schema exposed `model` and `max_turns` but had no way to carry a reasoning-effort override at all, so a model that reached for `TaskExecute` instead of the `Agent` tool silently lost the ability to set it — the request looked accepted (`model` still applied) while `thinking` was dropped with no error, defaulting to whatever the spawned agent's own definition or the session otherwise resolved to. `TaskExecute` now accepts `thinking` and forwards it as `thinkingLevel` over the `subagents:rpc:spawn` RPC (the spelling `@tintinweb/pi-subagents` expects there, distinct from the tool-facing `thinking`); auto-cascade carries the same value into every agent it chains.
+
 ## [0.9.0] - 2026-08-24
 
 ### Added

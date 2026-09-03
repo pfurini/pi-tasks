@@ -69,17 +69,18 @@ describe("Auto-cascade (enabled)", () => {
     expect(b.content[0].text).toContain('"agentId":"agent-2"');
   });
 
-  it("carries the launch model and turn limit into cascaded agents", async () => {
+  it("carries the launch model, turn limit, and thinking level into cascaded agents", async () => {
     await createAgentTask("Task A");
     await createAgentTask("Task B");
     await mock.executeTool("TaskUpdate", { taskId: "2", addBlockedBy: ["1"] });
 
-    await mock.executeTool("TaskExecute", { task_ids: ["1"], model: "haiku", max_turns: 7 });
+    await mock.executeTool("TaskExecute", { task_ids: ["1"], model: "haiku", max_turns: 7, thinking: "low" });
     mock.emitEvent("subagents:completed", { id: "agent-1", result: "done" });
     await flush();
 
     expect(rpc.spawned[1].options.model).toBe("haiku");
     expect(rpc.spawned[1].options.maxTurns).toBe(7);
+    expect(rpc.spawned[1].options.thinkingLevel).toBe("low");
   });
 
   it("waits for every blocker, not just the one that completed", async () => {

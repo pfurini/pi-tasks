@@ -392,7 +392,7 @@ describe("TaskExecute", () => {
     expect(rpc.spawned[0].options.isBackground).toBe(true);
   });
 
-  it("passes additional_context and max_turns to spawned agents", async () => {
+  it("passes additional_context, max_turns, and thinking to spawned agents", async () => {
     await mock.executeTool("TaskCreate", {
       subject: "Explore codebase",
       description: "Find all API endpoints",
@@ -403,10 +403,12 @@ describe("TaskExecute", () => {
       task_ids: ["1"],
       additional_context: "Focus on REST endpoints only",
       max_turns: 10,
+      thinking: "low",
     });
 
     expect(rpc.spawned[0].prompt).toContain("Focus on REST endpoints only");
     expect(rpc.spawned[0].options.maxTurns).toBe(10);
+    expect(rpc.spawned[0].options.thinkingLevel).toBe("low");
   });
 
   it("allows executing tasks whose blockers are all completed", async () => {

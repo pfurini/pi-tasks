@@ -170,7 +170,7 @@ export default function (pi: ExtensionAPI) {
   /** Latest ExtensionContext — refreshed on every tool execution so cascade always has a valid one. */
   let latestCtx: ExtensionContext | undefined;
   /** Cascade config — set by TaskExecute, consumed by completion listener. */
-  let cascadeConfig: { additionalContext?: string; model?: string; maxTurns?: number } | undefined;
+  let cascadeConfig: { additionalContext?: string; model?: string; maxTurns?: number; thinking?: string } | undefined;
   /** Maps agent IDs to task IDs for O(1) completion lookup. */
   const agentTaskMap = new Map<string, string>();
 
@@ -324,6 +324,7 @@ export default function (pi: ExtensionAPI) {
             isBackground: true,
             maxTurns: cascadeConfig.maxTurns,
             ...(cascadeConfig.model ? { model: cascadeConfig.model } : {}),
+            ...(cascadeConfig.thinking ? { thinkingLevel: cascadeConfig.thinking } : {}),
           });
           agentTaskMap.set(agentId, next.id);
           store.update(next.id, { owner: agentId, metadata: { ...next.metadata, agentId } });
@@ -1123,6 +1124,7 @@ Set up task dependencies:
 - **task_ids**: Array of task IDs to execute
 - **additional_context**: Extra context appended to each agent's prompt
 - **model**: Model override for agents (e.g., "sonnet", "haiku")
+- **thinking**: Thinking level override for agents (e.g., "low", "high")
 - **max_turns**: Maximum turns per agent`,
     promptGuidelines: [
       "Never use the Agent tool for tasks launched via TaskExecute — agents are already running.",
@@ -1131,6 +1133,7 @@ Set up task dependencies:
       task_ids: Type.Array(Type.String(), { description: "Task IDs to execute as subagents" }),
       additional_context: Type.Optional(Type.String({ description: "Extra context for agent prompts" })),
       model: Type.Optional(Type.String({ description: "Model override for agents" })),
+      thinking: Type.Optional(Type.String({ description: "Thinking level override for agents (e.g. \"low\", \"high\")" })),
       max_turns: Type.Optional(Type.Number({ description: "Max turns per agent", minimum: 1 })),
     }),
 
@@ -1180,6 +1183,7 @@ Set up task dependencies:
             isBackground: true,
             maxTurns: params.max_turns,
             ...(params.model ? { model: params.model } : {}),
+            ...(params.thinking ? { thinkingLevel: params.thinking } : {}),
           });
           agentTaskMap.set(agentId, taskId);
           store.update(taskId, { owner: agentId, metadata: { ...task.metadata, agentId } });
@@ -1196,6 +1200,7 @@ Set up task dependencies:
       cascadeConfig = {
         additionalContext: params.additional_context,
         model: params.model,
+        thinking: params.thinking,
         maxTurns: params.max_turns,
       };
 
