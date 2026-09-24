@@ -39,20 +39,38 @@
 
 ## Pi Compatibility
 
-The `@earendil-works/pi-*` packages are `peerDependencies` (`>=0.80.0`) and are pinned in
-`devDependencies` at the version the code is developed against. CI checks both ends of
-that range (`.github/workflows/ci.yml`):
+`package.json` is the only place that states a Pi version. Do not write a Pi or `typebox`
+version into docs, comments, scripts or CI; refer to `package.json` instead. `CHANGELOG.md`
+is exempt, because its entries record history.
 
-- `compat-floor-pi` reinstalls the earliest Pi the peer range claims and runs typecheck +
-  tests against it. It is not `continue-on-error` — a green run is the only evidence behind
+- `peerDependencies` names the floor: every `@earendil-works/pi-*` peer is `>=X.Y.Z`, with one
+  floor for all of them.
+- `devDependencies` pins every `@earendil-works/pi-*` package at one exact version, the version
+  the code is developed against. The pin is at or above the floor, and it includes every peer.
+- `devDependencies.typebox` pins exactly the `typebox` that the pinned
+  `@earendil-works/pi-coding-agent` depends on. Pi hands its own copy to extensions, so the
+  types must come from the same release.
+
+`test/pi-versions.test.ts` fails when these rules break, when `package-lock.json` disagrees
+with `package.json`, or when CI, the install script or this section hard-codes a version.
+
+`.github/scripts/install-pi.sh` is the one way to install a Pi version. It installs every
+`@earendil-works/pi-*` package in `devDependencies` at that version, plus the matching `typebox`.
+
+- To move the pin: `bash .github/scripts/install-pi.sh X.Y.Z --save`, then run the full check suite.
+- To move the floor: edit every `@earendil-works/pi-*` entry in `peerDependencies`. CI follows.
+
+CI checks both ends of the range (`.github/workflows/ci.yml`):
+
+- `compat-floor-pi` runs `install-pi.sh floor`, which reads the floor from `peerDependencies`,
+  then typecheck + tests. It is not `continue-on-error`: a green run is the only evidence behind
   the range. If the floor can no longer be supported, raise `peerDependencies` rather than
   weakening the job.
-- `compat-latest-pi` reinstalls Pi `latest` over the pin, so upstream breakage surfaces
-  before it reaches users. It is `continue-on-error` — current Pi is not a hard guarantee.
+- `compat-latest-pi` runs `install-pi.sh latest`, so upstream breakage surfaces before it
+  reaches users. It is `continue-on-error`: current Pi is not a hard guarantee.
 
-When bumping the devDependency pin, bump both `@earendil-works/pi-coding-agent` and
-`@earendil-works/pi-tui` together, and update the floor version in the CI job if the peer
-range changes.
+To reproduce a compat job locally, run the script with `floor` or `latest`, run the checks,
+then `npm ci` to restore the pinned install.
 
 ## Git
 
