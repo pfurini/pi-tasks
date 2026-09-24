@@ -28,6 +28,7 @@ import {
   onTurnStart,
   resetCadenceState,
 } from "./reminder-cadence.js";
+import { handoffKey, leaveHandoff, takeHandoff } from "./session-handoff.js";
 import { resolveTaskGlyphs } from "./task-glyphs.js";
 import { reclaimGlobalSessionTasksDir, sessionTaskFile } from "./task-paths.js";
 import { TaskStore } from "./task-store.js";
@@ -164,7 +165,7 @@ export default function (pi: ExtensionAPI) {
   let storeTarget = resolveStoreTarget();
   let store = new TaskStore(storeTarget.path);
   const tracker = new ProcessTracker();
-  const widget = new TaskWidget(store, cfg);
+  const widget = new TaskWidget(store, cfg, err => debug("widget:error", err));
 
   // ── Subagent integration state ──
   /** Latest ExtensionContext — refreshed on every tool execution so cascade always has a valid one. */
@@ -551,6 +552,33 @@ export default function (pi: ExtensionAPI) {
     };
   });
 
+  /** Restore the tasks the previous instance handed over (see session-handoff.ts).
+   *  A store backed by the file the tasks came from (project scope, a PI_TASKS path)
+   *  already holds them, and `seed` leaves a store that has tasks untouched. */
+  function takeOverTasks(ctx: ExtensionContext) {
+    const handoff = takeHandoff(handoffKey(ctx.sessionManager.getSessionFile(), ctx.cwd));
+    if (!handoff?.data.tasks.length) return;
+    if (handoff.sourcePath && handoff.sourcePath === storeTarget.path) return;
+    store.seed(handoff.data);
+  }
+
+  // Pi hands the next session to a fresh instance, so everything this one holds ends
+  // here. The widget stops its timer and lets go of the UI, which the next instance
+  // owns. Tasks the next instance cannot find on its own are left for it: a fork
+  // starts from its parent's list, and a reload of an in-memory list has no file to
+  // re-read. A reload keeps the same session, so its own session file is the key.
+  // The handoff reads this store when it is taken (see session-handoff.ts).
+  pi.on("session_shutdown", async (event, ctx) => {
+    widget.dispose();
+    const source = store;
+    const handoff = { sourcePath: storeTarget.path, read: () => source.snapshot() };
+    if (event.reason === "fork") {
+      leaveHandoff(handoffKey(event.targetSessionFile, ctx.cwd), handoff);
+    } else if (event.reason === "reload" && !storeTarget.path) {
+      leaveHandoff(handoffKey(ctx.sessionManager.getSessionFile(), ctx.cwd), handoff);
+    }
+  });
+
   // session_start replaces the never-emitted session_switch event. Rehydrating
   // here matters because before_agent_start only fires once the user prompts.
   pi.on("session_start", async (event, ctx) => {
@@ -558,13 +586,10 @@ export default function (pi: ExtensionAPI) {
     widget.setUICtx(ctx.ui as UICtx);
 
     const reason = event.reason;
-    // new/resume/fork reuse the running extension instance (getExtensions() is
-    // cached), so session-scoped state must be reset. startup/reload re-run the
-    // factory and start clean.
+    // Pi runs this factory again for every session it starts, so an instance normally
+    // sees one session_start. The reset below keeps a host that delivers a second
+    // session_start to the same instance from carrying one session's state into the next.
     const isSwitch = reason === "new" || reason === "resume" || reason === "fork";
-    // A fork branches the conversation, so its tasks carry over as an independent
-    // copy. Snapshot before the store re-points to the new (empty) session file.
-    const forkSeed = reason === "fork" ? store.snapshot() : undefined;
     if (isSwitch) {
       persistedTasksShown = false;
       agentsReattached = false;
@@ -581,7 +606,9 @@ export default function (pi: ExtensionAPI) {
     }
 
     initializeStoreForContext(ctx, true);
-    if (forkSeed?.tasks.length) store.seed(forkSeed); // carry the parent's tasks into the fork
+    // A fork starts from its parent's list. A reload re-reads a file-backed list, so
+    // only an in-memory list is taken over; a reload never writes one into a file.
+    if (reason === "fork" || (reason === "reload" && !storeTarget.path)) takeOverTasks(ctx);
     reattachAgents(); // subagents outlive a reload; relink them before events arrive
     // resume/reload/fork keep tasks; startup/new auto-clear an all-completed list.
     const keepsTasks = reason === "reload" || reason === "resume" || reason === "fork";

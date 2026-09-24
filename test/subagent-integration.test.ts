@@ -150,8 +150,10 @@ describe("Session task rehydration", () => {
 
       // /fork re-points to a brand-new (empty) session file. Without seeding, the
       // fork would silently lose the parent's tasks; with it, the fork gets an
-      // independent copy that does not write back to the parent.
+      // independent copy that does not write back to the parent. Pi shuts the
+      // parent's session down first, which is when its tasks are handed over.
       const ctxC = sessionCtx(child);
+      await mock.fireLifecycle("session_shutdown", { reason: "fork", targetSessionFile: ctxC.sessionManager.getSessionFile() }, ctxP);
       await mock.fireLifecycle("session_start", { reason: "fork" }, ctxC);
 
       const forked = new TaskStore(childFile).list();

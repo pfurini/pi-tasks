@@ -92,6 +92,8 @@ export class TaskWidget {
   constructor(
     private store: TaskStore,
     private config: TasksConfig = {},
+    /** Receives failures of UI calls, which never propagate (see `update`). */
+    private onError: (err: unknown) => void = () => {},
   ) {}
 
   setStore(store: TaskStore) {
@@ -132,12 +134,18 @@ export class TaskWidget {
    *  nowhere else: `update()` also runs on every task mutation and tool execution,
    *  so incrementing there tied the animation speed to how busy the agent was. */
   ensureTimer() {
-    if (!this.widgetInterval) {
-      this.widgetInterval = setInterval(() => {
-        this.widgetFrame++;
-        this.update();
-      }, 150);
-    }
+    // No UI, nothing to animate: a timer started now would only tick on its own.
+    if (this.widgetInterval || !this.uiCtx) return;
+    this.widgetInterval = setInterval(() => {
+      this.widgetFrame++;
+      this.update();
+    }, 150);
+  }
+
+  private stopTimer() {
+    if (!this.widgetInterval) return;
+    clearInterval(this.widgetInterval);
+    this.widgetInterval = undefined;
   }
 
   /** Render callback entry point. Guarded so a render error can never escape to
@@ -262,21 +270,37 @@ export class TaskWidget {
     return lines;
   }
 
-  /** Force an immediate widget update. */
+  /** Force an immediate widget update.
+   *
+   *  Never throws. The spinner timer calls this, and an exception escaping a timer is
+   *  uncaught, which makes Pi's interactive mode exit. Every other caller has just
+   *  changed the store, and a failed redraw must not turn that success into an error:
+   *  a model told TaskCreate failed would create the task again. A failure stops the
+   *  spinner; the next task change tries again. */
   update() {
-    if (!this.uiCtx) return;
+    const ui = this.uiCtx;
+    if (!ui) {
+      this.stopTimer();
+      return;
+    }
+    try {
+      this.sync(ui);
+    } catch (err) {
+      this.stopTimer();
+      this.onError(err);
+    }
+  }
+
+  private sync(ui: UICtx) {
     const tasks = this.store.list();
 
     // Transition: visible → hidden
     if (tasks.length === 0) {
       if (this.widgetRegistered) {
-        this.uiCtx.setWidget("tasks", undefined);
+        ui.setWidget("tasks", undefined);
         this.widgetRegistered = false;
       }
-      if (this.widgetInterval) {
-        clearInterval(this.widgetInterval);
-        this.widgetInterval = undefined;
-      }
+      this.stopTimer();
       return;
     }
 
@@ -291,16 +315,12 @@ export class TaskWidget {
 
     // Check if any task needs animation
     const hasActiveSpinner = tasks.some(t => this.activeTaskIds.has(t.id) && t.status === "in_progress");
-    if (hasActiveSpinner) {
-      this.ensureTimer();
-    } else if (!hasActiveSpinner && this.widgetInterval) {
-      clearInterval(this.widgetInterval);
-      this.widgetInterval = undefined;
-    }
+    if (hasActiveSpinner) this.ensureTimer();
+    else this.stopTimer();
 
     // Transition: hidden → visible — register widget callback once
     if (!this.widgetRegistered) {
-      this.uiCtx.setWidget("tasks", (tui, theme) => {
+      ui.setWidget("tasks", (tui, theme) => {
         this.tui = tui;
         return { render: () => this.renderWidget(tui, theme), invalidate: () => {} };
       }, { placement: "aboveEditor" });
@@ -311,15 +331,20 @@ export class TaskWidget {
     }
   }
 
+  /** Stop the timer and release the UI. The UI belongs to the next session's
+   *  instance from here on, so nothing may reach it through this one: `update` is a
+   *  no-op until `setUICtx` hands a UI back. */
   dispose() {
-    if (this.widgetInterval) {
-      clearInterval(this.widgetInterval);
-      this.widgetInterval = undefined;
-    }
-    if (this.uiCtx) {
-      this.uiCtx.setWidget("tasks", undefined);
-    }
+    this.stopTimer();
+    const ui = this.uiCtx;
+    this.uiCtx = undefined;
     this.widgetRegistered = false;
     this.tui = undefined;
+    if (!ui) return;
+    try {
+      ui.setWidget("tasks", undefined);
+    } catch (err) {
+      this.onError(err);
+    }
   }
 }

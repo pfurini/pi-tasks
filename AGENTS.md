@@ -33,6 +33,7 @@
   ```
 - `npm run lint:fix` auto-fixes most style issues.
 - `npm run test` runs the whole suite. To iterate on a single file, run it directly: `npx vitest run test/<file>.test.ts`.
+- `npm run test` includes `test/subagents-e2e.test.ts`, which runs pi-tasks with the real `@tintinweb/pi-subagents`. It loads pi-subagents from `PI_SUBAGENTS_DIR`, or from a `pi-subagents` checkout next to this repository, and skips itself when neither exists (CI). The checkout needs its own `npm install`, and a pi-subagents change in progress there is what the suite tests.
 - If you create or modify a test file, run it and iterate on the test or implementation until it passes.
 - `npm run build` compiles with `tsc`; run it only when verifying the build output or when requested.
 - For ad-hoc scripts, write them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
@@ -50,6 +51,9 @@ is exempt, because its entries record history.
 - `devDependencies.typebox` pins exactly the `typebox` that the pinned
   `@earendil-works/pi-coding-agent` depends on. Pi hands its own copy to extensions, so the
   types must come from the same release.
+- `devDependencies` pins `@earendil-works/pi-ai` for the integration tests only. Their faux
+  model (`test/helpers/pi-host.ts`) reads the host's message shapes, so it must come from the
+  pinned Pi release. The extension does not import it, so it is not a peer.
 
 `test/pi-versions.test.ts` fails when these rules break, when `package-lock.json` disagrees
 with `package.json`, or when CI, the install script or this section hard-codes a version.

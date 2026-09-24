@@ -7,12 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Integration tests run pi-tasks inside a real Pi runtime.** They cover `/new`, `/resume`, `/fork` and `/reload`, which the mocked `ExtensionAPI` cannot reproduce because Pi starts each session in a new extension instance. They script the model with the faux provider of `@earendil-works/pi-ai`, now a devDependency pinned with the other Pi packages.
+- **End-to-end tests run pi-tasks with the real pi-subagents.** They cover `TaskExecute`, `TaskOutput`, `TaskStop`, auto-cascade, and a subagent cut short by `/reload`, `/fork`, `/new` or quit, in both extension load orders. They use `PI_SUBAGENTS_DIR` or a `pi-subagents` checkout next to this repository, and are skipped without one.
+
 ### Changed
 - **BREAKING: pi-tasks now requires Pi 0.87.0 or later.** The peer range moves from `>=0.80.5` to `>=0.87.0`, and development and CI now track the 0.87 line; older releases are no longer tested. Update Pi before updating pi-tasks. `package.json` is now the only place a Pi version is stated: CI reads the floor from it, `test/pi-versions.test.ts` fails on version drift, and `.github/scripts/install-pi.sh` is the one way to move the pin.
 
 ### Fixed
 - **`TaskExecute` now forwards a `thinking` level to spawned agents.** Its schema exposed `model` and `max_turns` but had no way to carry a reasoning-effort override at all, so a model that reached for `TaskExecute` instead of the `Agent` tool silently lost the ability to set it — the request looked accepted (`model` still applied) while `thinking` was dropped with no error, defaulting to whatever the spawned agent's own definition or the session otherwise resolved to. `TaskExecute` now accepts `thinking` and forwards it as `thinkingLevel` over the `subagents:rpc:spawn` RPC (the spelling `@tintinweb/pi-subagents` expects there, distinct from the tool-facing `thinking`); auto-cascade carries the same value into every agent it chains.
 - **`typebox` moved from `dependencies` to `peerDependencies` (`"*"`).** Pi provides `typebox` to extensions, and a bundled copy can load a second TypeBox runtime alongside the host's. Pi now warns about host-provided packages in `dependencies` on every launch; this change clears that warning. A dev pin, matching the `typebox` of the pinned Pi, keeps type-checking working.
+- **Forked sessions keep their tasks again.** Pi starts every session, forks included, in a fresh extension instance, so the fork seeded itself from an empty store and began with no tasks. The parent's instance now hands its tasks over on `session_shutdown`, and the fork takes them on `session_start`. A list shared through `project` scope or a `PI_TASKS` path is not copied twice.
+- **`/reload` keeps a task list that lives only in memory.** Under `memory` scope, `PI_TASKS=off`, or a session run with `--no-session`, the reloaded instance started with an empty list. The old instance now hands the list to the reloaded one. A file-backed list is still re-read from its file.
+- **The task widget's spinner no longer outlives its session.** An instance replaced by `/new`, `/resume`, `/fork` or `/reload` kept its 150 ms spinner timer running for the rest of the process, re-reading its old task file on every tick. The widget now stops the timer and releases the UI on `session_shutdown`.
+- **A widget failure can no longer close Pi or fail a task tool.** An exception from a widget redraw escaped the spinner timer, and Pi's interactive mode exits on an uncaught exception. The same failure inside a tool call reported a successful `TaskCreate` as failed, inviting a duplicate. Widget updates now contain their failures and log them under `PI_TASKS_DEBUG`.
+- **A task whose subagent is cut short by the end of a session goes back to pending.** pi-subagents aborts every agent when a session ends, and the task stayed `in_progress` forever, tied to an agent that no longer existed. With a pi-subagents that reports those aborts, the task now returns to pending with the reason as its error, and can be executed again. A fork, or a reload of an in-memory list, carries it over in that state whichever extension loads first. Needs the pi-subagents release with the session-end report.
 
 ## [0.9.0] - 2026-08-24
 
